@@ -35,10 +35,10 @@ final class TutorialSandboxTests: XCTestCase {
         let pools = try sandbox.database.fetchPools(userId: userId)
         XCTAssertEqual(pools.map(\.name).sorted(), ["Fitness", "Home", "Reading"])
         let counts = Dictionary(uniqueKeysWithValues: pools.map { ($0.name, $0.taskIds.count) })
-        XCTAssertEqual(counts, ["Fitness": 9, "Reading": 6, "Home": 8])
+        XCTAssertEqual(counts, ["Fitness": 9, "Reading": 8, "Home": 8], "every pool fills eight squares with one left off and one added by hand")
         // Every pool member is a real, resolvable, unplaced task.
         let tasks = try sandbox.database.fetchTasks(userId: userId)
-        XCTAssertEqual(tasks.count, 23)
+        XCTAssertEqual(tasks.count, 25)
         let ids = Set(tasks.map(\.id))
         XCTAssertTrue(pools.allSatisfy { $0.taskIds.allSatisfy(ids.contains) })
         XCTAssertTrue(try sandbox.database.fetchBoards(userId: userId).isEmpty, "Your boards are not used in the tutorial")

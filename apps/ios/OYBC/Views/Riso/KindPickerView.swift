@@ -10,6 +10,15 @@ struct KindPickerView: View {
     @Binding var selection: CountKind
     let lock: KindPickerLock
     var onRequest: ((CountKind) -> Void)? = nil
+    /// The kinds on offer (the Getting Started lesson teaches Discrete alone);
+    /// nil offers every kind. Kinds left out are locked like `lock`'s.
+    var allowedKinds: Set<CountKind>? = nil
+
+    private var lockedValues: Set<CountKind> {
+        var locked = Set(CountKind.allCases.filter { isKindSegmentLocked(lock, segment: $0) })
+        if let allowedKinds { locked.formUnion(Set(CountKind.allCases).subtracting(allowedKinds)) }
+        return locked
+    }
 
     var body: some View {
         RisoSegmented(
@@ -21,7 +30,7 @@ struct KindPickerView: View {
                     if let onRequest { onRequest(next) } else { selection = next }
                 }
             ),
-            lockedValues: Set(CountKind.allCases.filter { isKindSegmentLocked(lock, segment: $0) }),
+            lockedValues: lockedValues,
             lockGlyphValues: Set(CountKind.allCases.filter { kindSegmentShowsLock(lock, segment: $0, selected: selection) })
         )
         .accessibilityElement(children: .contain)

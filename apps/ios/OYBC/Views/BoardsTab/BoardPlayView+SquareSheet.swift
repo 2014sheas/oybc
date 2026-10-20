@@ -110,6 +110,7 @@ extension BoardPlayView {
                 .presentationBackground(Color.risoPaper)
                 .presentationCornerRadius(12)
                 .tutorialCoachLayer()
+                .interactiveDismissDisabled(tutorialCoach?.session != nil) // a lesson's sheet closes only through the lesson
                 .modifier(TutorialSheetCloser())
         }
     }

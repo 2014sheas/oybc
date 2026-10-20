@@ -36,7 +36,8 @@ extension BoardPlayView {
                                 Image(systemName: item.icon)
                             }
                         }
-                        .disabled(!item.isEnabled)
+                        // A lesson's hold step offers "Mark done" alone.
+                        .disabled(!item.isEnabled || (tutorialCoach?.session != nil && item.action != .toggleNormal))
                     }
                 }
             }
@@ -86,6 +87,21 @@ extension BoardPlayView {
                 sourceTaskId: strip.scopeTaskId, amount: 0, unit: "", verb: .logged, message: strip.text,
                 undo: .counterLog, toastKey: UUID().uuidString, squareUndo: strip.undo
             )
+        }
+    }
+}
+
+/// Attaches a square's hold menu only when the running lesson's step teaches
+/// the hold (or no lesson runs) — a square never offers more than the step.
+struct TutorialHoldGate<Menu: View>: ViewModifier {
+    @ViewBuilder let menu: () -> Menu
+    @Environment(\.tutorialSignals) private var tutorialSignals
+
+    func body(content: Content) -> some View {
+        if tutorialSignals.squareInteraction.allowsHold {
+            content.contextMenu(menuItems: menu)
+        } else {
+            content
         }
     }
 }

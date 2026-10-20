@@ -23,6 +23,9 @@ struct TutorialSession: Equatable {
     var phase: Phase = .running
     /// A Bingo / Greenlog moment is on screen — the coach layer steps aside.
     var momentOpen: Bool = false
+    /// The current step's action happened; the lesson holds on its done line
+    /// (every hole closed) until Next lights the next control.
+    var awaitingNext: Bool = false
     /// Lesson 3: what the last log produced ("22 of 20"), for the step copy.
     var logSummary: String?
     /// Lesson 3: whether that log finished the square.
@@ -44,10 +47,18 @@ struct TutorialSession: Equatable {
     /// The current step (nil once past the end).
     var currentStep: TutorialStep? { steps.indices.contains(step) ? steps[step] : nil }
 
+    /// The step whose screen is up: the next one while the lesson waits for
+    /// Next (its sheet may already be presented), else the current one.
+    var screenStep: TutorialStep? {
+        let index = awaitingNext ? step + 1 : step
+        return steps.indices.contains(index) ? steps[index] : nil
+    }
+
     /// The controls the current step lights: its anchors (a `.square` resolved
     /// to where its title sits now), or (finale) every still-incomplete square.
+    /// Nothing while the lesson waits for Next.
     var litAnchors: [TutorialAnchorID] {
-        guard let step = currentStep else { return [] }
+        guard !awaitingNext, let step = currentStep else { return [] }
         if step.litsIncompleteSquares, let slots = incompleteSlots, !slots.isEmpty {
             return slots.map { .square($0) }
         }
@@ -72,6 +83,9 @@ struct TutorialSignals: Equatable {
     var closesSquareSheet: Bool = false
     /// The current step points at the Undo toast — keep it up until Next.
     var holdsToast: Bool = false
+    /// What a play-board square accepts right now (lesson 3): the one gesture
+    /// the step teaches, nothing while the lesson waits for Next.
+    var squareInteraction: TutorialSquareInteraction = .free
 
     /// No lesson running.
     static let inactive = TutorialSignals()
@@ -140,30 +154,40 @@ final class TutorialCoordinator: ObservableObject {
         let step = session.currentStep
         return TutorialSignals(
             active: true, step: session.step, phase: session.phase, sandboxed: sandbox != nil,
-            closesSquareSheet: step?.closesSquareSheet ?? false, holdsToast: step?.holdsToast ?? false
+            closesSquareSheet: step?.closesSquareSheet ?? false, holdsToast: step?.holdsToast ?? false,
+            squareInteraction: session.awaitingNext ? .none : (step?.squareInteraction ?? .none)
         )
     }
 
-    /// The instruction for the current step, with what the user just did folded in.
+    /// The coach mark's line: the step's instruction, or its done line while
+    /// the lesson waits for Next — either with what the user just did folded in.
     var currentText: String? {
         guard let session, let step = session.currentStep else { return nil }
-        switch step.dynamic {
+        if session.awaitingNext {
+            let fallback = step.doneText ?? step.text
+            return dynamicText(step.doneDynamic, session: session, fallback: fallback)
+        }
+        return dynamicText(step.dynamic, session: session, fallback: step.text)
+    }
+
+    private func dynamicText(_ dynamic: TutorialStep.DynamicText?, session: TutorialSession, fallback: String) -> String {
+        switch dynamic {
         case .loggedSummary:
-            guard let summary = session.logSummary else { return step.text }
+            guard let summary = session.logSummary else { return fallback }
             return session.logFinishedSquare
                 ? "\(summary). The square is done; Undo stays here."
                 : "\(summary). Undo stays here."
         case .poolFills:
-            return session.poolSummary.map { "\($0). Tap Next." } ?? step.text
+            return session.poolSummary.map { "\($0)." } ?? fallback
         case .remainingSquares:
-            guard let left = session.incompleteSlots?.count, left > 0 else { return step.text }
+            guard let left = session.incompleteSlots?.count, left > 0 else { return fallback }
             let word = BoardWizardTasksStepView.spelledCount(left)
             let head = word.prefix(1).uppercased() + word.dropFirst()
             return left == 1
-                ? "\(head) left. Complete it for a Greenlog."
-                : "\(head) left. Complete them for a Greenlog."
+                ? "\(head) left. Tap it to complete it."
+                : "\(head) left. Tap each to complete it."
         case nil:
-            return step.text
+            return fallback
         }
     }
 
@@ -263,11 +287,12 @@ final class TutorialCoordinator: ObservableObject {
         return try? database.fetchUser(id: userId)
     }
 
-    /// An action step's event from a real control. Advances when it is the one
-    /// the current step waits for; a moment closing also satisfies a LATER step
-    /// that waits for it (the board got ahead of the script — Tidy desk marked
-    /// done from the hold menu, or the board finished before the Bingo beat);
-    /// a lit sheet closing early steps back to the control that reopens it.
+    /// An action step's event from a real control. When it is the one the
+    /// current step waits for, the lesson holds on the step's done line until
+    /// Next (or moves straight on when the step has none: the next step is
+    /// read-only, or the lesson completes). No other event moves the lesson
+    /// forward — a step is never skipped — and a lit sheet closing early
+    /// steps back to the control that reopens it.
     func handle(_ event: TutorialEvent) {
         guard var current = session, current.phase == .running, !isClosing else { return }
         // A moment closing always un-hides the coach layer, whatever the step.
@@ -276,24 +301,49 @@ final class TutorialCoordinator: ObservableObject {
             session = current
         }
         guard let step = current.currentStep else { return }
+        if current.awaitingNext {
+            // Every hole is closed; only a retreat for the step about to light
+            // (its sheet handed off before Next) means anything.
+            if let back = TutorialCatalog.retreat(lesson: current.lesson, step: current.step + 1, event: event) {
+                retreat(to: back)
+            }
+            return
+        }
         if step.advance == .action(event) {
-            advance()
-        } else if event == .bingoMomentClosed || event == .greenlogMomentClosed,
-                  let later = current.steps.indices.dropFirst(current.step + 1).first(where: { current.steps[$0].advance == .action(event) }) {
-            current.step = later
-            session = current
-            advance()
+            if step.doneText != nil, current.step + 1 < current.steps.count {
+                current.awaitingNext = true
+                current.resumed = false
+                session = current
+                recordStep(current.lesson, step: current.step + 1)
+            } else {
+                advance()
+            }
         } else if let back = TutorialCatalog.retreat(lesson: current.lesson, step: current.step, event: event) {
-            current.step = back
-            current.resumed = false
-            session = current
-            recordStep(current.lesson, step: back)
+            retreat(to: back)
         }
     }
 
-    /// The coach mark's Next on a read-only step.
+    /// Steps back to `step` (the control that reopens a dismissed sheet).
+    private func retreat(to step: Int) {
+        guard var current = session else { return }
+        current.step = step
+        current.awaitingNext = false
+        current.resumed = false
+        session = current
+        recordStep(current.lesson, step: step)
+    }
+
+    /// The coach mark's Next: lights the next control after a done line, or
+    /// advances a read-only step.
     func next() {
-        guard let current = session, current.phase == .running, !isClosing, current.currentStep?.advance == .next else { return }
+        guard var current = session, current.phase == .running, !isClosing else { return }
+        if current.awaitingNext {
+            current.awaitingNext = false
+            session = current
+            advance()
+            return
+        }
+        guard current.currentStep?.advance == .next else { return }
         advance()
     }
 
@@ -319,6 +369,9 @@ final class TutorialCoordinator: ObservableObject {
 
     /// Whether the current step is read-only (shows Next).
     var currentStepIsReadOnly: Bool { session?.currentStep?.advance == .next }
+
+    /// Whether the coach mark shows Next: a read-only step, or a done line.
+    var showsNext: Bool { (session?.awaitingNext ?? false) || currentStepIsReadOnly }
 
     /// A sheet-level coach layer appeared.
     func sheetLayerAppeared() { sheetLayerCount += 1 }

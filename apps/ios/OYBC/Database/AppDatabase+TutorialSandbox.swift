@@ -41,8 +41,9 @@ extension AppDatabase {
     ///   - user: The signed-in user; the sandbox gets a copy of the row so
     ///     userId-scoped queries and the wizard's preferences resolve.
     ///   - resumeStep: The saved step being resumed (lesson 3 reseeds the board to
-    ///     the state that step implies: Stretch done from step 3, Read at 22/20
-    ///     from step 6, Tidy desk done from step 9).
+    ///     the state that step implies: Stretch done past its tap step, Read at
+    ///     22/20 past the chip step, Tidy desk done past the hold step — see
+    ///     `TutorialCatalog.CompleteStep`).
     ///   - now: The seeding instant (injectable for tests).
     static func seedTutorialSandbox(
         lesson: TutorialLessonID,
@@ -71,7 +72,11 @@ extension AppDatabase {
 
     // MARK: - Lesson 2 — pools
 
-    /// Supplied pool contents for lesson 2: Fitness 9, Reading 6, Home 8.
+    /// Supplied pool contents for lesson 2: Fitness 9, Reading 8, Home 8.
+    /// Every pool fills a 3×3 (eight squares) on its own, and still does with
+    /// one task left off plus the one the lesson adds by hand — the lesson
+    /// pulls exactly one pool, so none may fall short. (The handoff's
+    /// Reading 6 could not; two titles were added.)
     static let tutorialPoolSpecs: [(name: String, titles: [String])] = [
         ("Fitness", [
             "Run 5k", "Stretch 10 min", "Walk 10k steps", "Yoga", "Push-ups",
@@ -79,7 +84,7 @@ extension AppDatabase {
         ]),
         ("Reading", [
             "Read 20 pages", "Finish a chapter", "Read the news", "Read to the kids",
-            "Visit the library", "Review notes",
+            "Visit the library", "Review notes", "Read a poem", "Browse a bookshop",
         ]),
         ("Home", [
             "Tidy desk", "Water plants", "Do the dishes", "Take out the trash",
@@ -159,11 +164,12 @@ extension AppDatabase {
             try board.save(db)
             for (index, square) in grid.enumerated() {
                 let taskId = Self.generateUUID()
-                // What a resumed lesson has already done: Stretch (after step 3),
-                // Read to 22/20 (after step 6), Tidy desk (after step 9).
-                let resumedDone = (square.title == "Stretch" && resumeStep >= 3)
-                    || (square.title == "Tidy desk" && resumeStep >= 9)
-                let resumedRead = square.title == "Read 20 pages" && resumeStep >= 6
+                // What a resumed lesson has already done (a saved step is the
+                // index of the step to light next, so "past" a step is `>`):
+                // Stretch, Read to 22/20, Tidy desk.
+                let resumedDone = (square.title == "Stretch" && resumeStep > TutorialCatalog.CompleteStep.tapStretch)
+                    || (square.title == "Tidy desk" && resumeStep > TutorialCatalog.CompleteStep.holdTidy)
+                let resumedRead = square.title == "Read 20 pages" && resumeStep > TutorialCatalog.CompleteStep.logChip
                 var task = Self.tutorialTask(id: taskId, userId: userId, title: square.title, now: ts)
                 if case .counting(let action, let unit, let goal, let current) = square.kind {
                     task.type = .counting

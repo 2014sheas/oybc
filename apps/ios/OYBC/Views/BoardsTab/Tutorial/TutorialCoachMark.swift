@@ -19,6 +19,8 @@ struct TutorialCoachMark: View {
     let stepCount: Int
     var resumed: Bool = false
     var showsNext: Bool = false
+    /// The step's action happened: a green check leads the line, Next moves on.
+    var done: Bool = false
     var notch: Notch = .up
     /// Distance from the card's leading edge to the notch's centre.
     var notchOffset: CGFloat = 28
@@ -57,14 +59,25 @@ struct TutorialCoachMark: View {
             }
             .frame(minHeight: 24)
 
-            Text(text)
-                .font(.risoHead(15, .bold))
-                .tracking(-0.15)
-                .lineSpacing(15 * 0.3 - 15 * 0.2) // line-height 1.3 over the ~1.2 font default
-                .foregroundStyle(Color.risoInk)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.trailing, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if done {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Color.risoPaper)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.risoGreen))
+                        .overlay(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                        .accessibilityHidden(true)
+                }
+                Text(text)
+                    .font(.risoHead(15, .bold))
+                    .tracking(-0.15)
+                    .lineSpacing(15 * 0.3 - 15 * 0.2) // line-height 1.3 over the ~1.2 font default
+                    .foregroundStyle(Color.risoInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.trailing, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 10) {
                 HStack(spacing: 4) {

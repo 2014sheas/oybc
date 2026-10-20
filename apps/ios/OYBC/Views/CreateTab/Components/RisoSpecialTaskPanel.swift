@@ -72,10 +72,13 @@ struct RisoSpecialTaskPanel: View {
     /// The host's database (the tutorial sandbox inside a lesson).
     @Environment(\.appDatabase) private var database
     @Environment(\.tutorialCoach) private var tutorialCoach
+    @Environment(\.tutorialSignals) private var tutorialSignals
 
-    /// The type chips offered — Achievement drops out in pool context.
+    /// The type chips offered — Achievement drops out in pool context; a
+    /// lesson offers Counting alone (the one type it teaches).
     private var availableTypes: [SpecialType] {
-        SpecialType.allCases.filter { achievementAllowed || $0 != .achievement }
+        if tutorialSignals.active { return [.counting] }
+        return SpecialType.allCases.filter { achievementAllowed || $0 != .achievement }
     }
 
     // Achievement board/template pickers
@@ -304,7 +307,8 @@ struct RisoSpecialTaskPanel: View {
                 if let s = linkedSuggestion {
                     KindTagView(kind: s.countKind, counterName: s.name, lifetime: s.lifetime)
                 } else {
-                    KindPickerView(selection: $countingKind, lock: .none)
+                    // A lesson teaches Discrete, the free kind; the others dim.
+                    KindPickerView(selection: $countingKind, lock: .none, allowedKinds: tutorialSignals.active ? [.discrete] : nil)
                 }
             }
             .tutorialAnchor(.countingKind)

@@ -146,7 +146,10 @@ struct RisoBoardSetupForm: View {
                             controller.updateTimeframe(newValue)
                         }
                     }
-                )
+                ),
+                // A lesson picks a calendar timeframe; Custom's date fields
+                // would sit under the scrim.
+                lockedValues: tutorialSignals.sandboxed ? [.custom] : []
             )
             .tutorialAnchor(.timeframePicker)
 

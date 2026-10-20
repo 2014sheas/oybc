@@ -961,7 +961,7 @@ struct BoardPlayView: View {
             compoundRequiredCount: render.compoundRequiredCount,
             onTap: { handlePlaySquareTap(boardTask: boardTask, task: task) }
         )
-        .contextMenu { squareMenu(boardTask: boardTask, task: task, render: render) }
+        .modifier(TutorialHoldGate { squareMenu(boardTask: boardTask, task: task, render: render) })
         // P3 — pulse the square when it just arrived from an elsewhere log.
         // Applied at the call site (not inside RisoBoardPlayCell) so the
         // snapshot-covered cell internals stay untouched.

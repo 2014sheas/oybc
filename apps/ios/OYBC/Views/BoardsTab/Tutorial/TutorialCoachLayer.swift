@@ -174,7 +174,9 @@ struct TutorialCoachOverlay: View {
         geo: GeometryProxy, session: TutorialSession, step: TutorialStep,
         lit: [(rect: CGRect, radius: CGFloat)], hasTarget: Bool
     ) -> some View {
-        if hasTarget {
+        if session.awaitingNext {
+            doneLayer(session: session, step: step)
+        } else if hasTarget {
             targetLayer(geo: geo, session: session, step: step, lit: lit)
         } else if !isRoot, step.onSheet {
             // The sheet owns the step but its lit control went away (the Undo
@@ -199,6 +201,29 @@ struct TutorialCoachOverlay: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
+    }
+
+    /// The hold after an action: every hole closed, the step's done line with
+    /// Next at the bottom. Drawn by the layer whose presentation the NEXT step
+    /// lights (its sheet is already up), so the card is never under a sheet.
+    @ViewBuilder
+    private func doneLayer(session: TutorialSession, step: TutorialStep) -> some View {
+        let nextOnSheet = session.screenStep?.onSheet ?? false
+        let sheetOwns = nextOnSheet && coach.sheetLayerCount > 0
+        let drawsMark = isRoot ? !sheetOwns : nextOnSheet
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                .fill(TutorialScrimShape.color)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {}
+            if drawsMark {
+                mark(session: session, step: step, notch: .none, notchOffset: 0)
+                    .padding(.horizontal, TutorialCoachGeometry.markInset)
+                    .padding(.bottom, 24 + keyboardHeight)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: session.awaitingNext)
     }
 
     private func targetLayer(
@@ -267,7 +292,8 @@ struct TutorialCoachOverlay: View {
             step: session.step,
             stepCount: session.steps.count,
             resumed: session.resumed,
-            showsNext: step.advance == .next,
+            showsNext: coach.showsNext,
+            done: session.awaitingNext,
             notch: notch,
             notchOffset: notchOffset,
             onExit: { confirmingLeave = true; coach.requestLeave() },

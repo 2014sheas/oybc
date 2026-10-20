@@ -79,6 +79,8 @@ struct SquaresEditGrid: View {
     /// ends OR is cancelled — `onEnded` never runs on a cancel, so this is
     /// the only reliable cleanup signal.
     @GestureState private var isHoldGestureLive: Bool = false
+    /// A Getting Started lesson teaches the tap-menu, so squares never lift.
+    @Environment(\.tutorialSignals) private var tutorialSignals
 
     private let tapAfterLiftGrace: TimeInterval = 0.3
 
@@ -100,7 +102,7 @@ struct SquaresEditGrid: View {
                 let yOff = CGFloat(row) * stride
 
                 let isHole = dragActive && cell.id == liftedId
-                let isMovable = !cell.isPinned && !cell.isEmpty
+                let isMovable = !cell.isPinned && !cell.isEmpty && !tutorialSignals.active
                 let isDimmed = dragActive && cell.id != liftedId && !cell.isEmpty
 
                 squareCellView(
