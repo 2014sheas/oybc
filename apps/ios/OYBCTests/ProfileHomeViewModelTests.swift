@@ -186,25 +186,34 @@ final class ProfileHomeViewModelTests: XCTestCase {
 
     func test_gettingStartedDisplay_hiddenWhenComplete() {
         XCTAssertEqual(
-            ProfileHomeViewModel.gettingStartedDisplay(completedCount: 8, isComplete: true),
+            ProfileHomeViewModel.gettingStartedDisplay(completedCount: 9, isComplete: true),
             .hidden
         )
     }
 
-    // MARK: - nextIncompleteLessonTitle (Views/BoardsTab/TutorialLessons.swift)
+    // MARK: - nextIncompleteLessonTitle (Views/BoardsTab/Tutorial/TutorialCatalog.swift)
 
-    func test_nextIncompleteLessonTitle_firstLessonWhenNoneComplete() {
-        XCTAssertEqual(nextIncompleteLessonTitle(completedIDs: []), tutorialLessons[0].title)
+    func test_nextIncompleteLessonTitle_firstFreeLessonWhenNoneComplete() {
+        XCTAssertEqual(nextIncompleteLessonTitle(progress: .empty), "Create a task")
     }
 
     func test_nextIncompleteLessonTitle_skipsCompletedLessonsInOrder() {
-        let completed = Set([tutorialLessons[0].id, tutorialLessons[1].id])
-        XCTAssertEqual(nextIncompleteLessonTitle(completedIDs: completed), tutorialLessons[2].title)
+        var progress = TutorialProgress.empty
+        progress.set(.createTask, .done)
+        progress.set(.createBoard, .done)
+        XCTAssertEqual(nextIncompleteLessonTitle(progress: progress), "Complete a board")
+    }
+
+    func test_nextIncompleteLessonTitle_proLessonFollowsTheFreeRow() {
+        var progress = TutorialProgress.empty
+        for id in TutorialLessonID.middleRow { progress.set(id, .done) }
+        XCTAssertEqual(nextIncompleteLessonTitle(progress: progress), "Multi-step tasks")
     }
 
     func test_nextIncompleteLessonTitle_nilWhenAllComplete() {
-        let completed = Set(tutorialLessons.map(\.id))
-        XCTAssertNil(nextIncompleteLessonTitle(completedIDs: completed))
+        var progress = TutorialProgress.empty
+        for id in TutorialLessonID.allCases { progress.set(id, .done) }
+        XCTAssertNil(nextIncompleteLessonTitle(progress: progress))
     }
 
     // MARK: - load() integration (AppDatabase.makeTestInstance())

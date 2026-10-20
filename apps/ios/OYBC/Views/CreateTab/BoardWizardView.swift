@@ -18,6 +18,10 @@ import SwiftUI
 struct BoardWizardView: View {
     let userId: String
     let preferences: UserPreferences
+    /// Injected database (defaults to the app singleton) — the wizard view
+    /// model, the task library and every write go through it. The Getting
+    /// Started "Create a board" lesson passes its throwaway sandbox.
+    var database: AppDatabase = .shared
     let draft: (board: Board, boardTasks: [BoardTask])?
     let prefilledRecurringTimeframe: Timeframe?
     let targetWindowDate: Date?
@@ -37,7 +41,8 @@ struct BoardWizardView: View {
     var onDeleteDraft: ((_ boardId: String) -> Void)? = nil
 
     @State private var wizard: BoardWizardViewModel
-    @State private var library = TaskLibraryViewModel()
+    @State private var library: TaskLibraryViewModel
+    @Environment(\.tutorialCoach) private var tutorialCoach
     @State private var showCancelDialog: Bool = false
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
@@ -63,6 +68,8 @@ struct BoardWizardView: View {
     init(
         userId: String,
         preferences: UserPreferences,
+        database: AppDatabase = .shared,
+        prefillName: String? = nil,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
@@ -76,6 +83,7 @@ struct BoardWizardView: View {
     ) {
         self.userId = userId
         self.preferences = preferences
+        self.database = database
         self.draft = draft
         self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
         self.targetWindowDate = targetWindowDate
@@ -86,7 +94,7 @@ struct BoardWizardView: View {
         self.onComplete = onComplete
         self.onTemplateComplete = onTemplateComplete
         self.onDeleteDraft = onDeleteDraft
-        _wizard = State(initialValue: BoardWizardViewModel(
+        let viewModel = BoardWizardViewModel(
             preferences: preferences,
             initialStep: initialStep,
             draft: draft,
@@ -94,8 +102,12 @@ struct BoardWizardView: View {
             targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
             startRecurring: startRecurring,
-            userId: userId
-        ))
+            userId: userId,
+            database: database
+        )
+        if let prefillName { viewModel.name = prefillName }
+        _wizard = State(initialValue: viewModel)
+        _library = State(initialValue: TaskLibraryViewModel(database: database))
     }
 
     // MARK: - Pool mix lookups (Task Pools + Recurring Boards Rework, P3)
@@ -412,7 +424,11 @@ struct BoardWizardView: View {
             BoardWizardSetupStepView(
                 controller: wizard,
                 onCancel: handleCancelRequested,
-                onNext: { wizard.goNext() },
+                onNext: {
+                    let before = wizard.currentStep
+                    wizard.goNext()
+                    if wizard.currentStep != before { tutorialCoach?.handle(.setupNext) }
+                },
                 onDeleteRepeatingBoard: editingTemplate != nil ? { showDeleteConfirm = true } : nil
             )
         case 2:
@@ -458,7 +474,11 @@ struct BoardWizardView: View {
                 onRestampPlacementParams: { wizard.restampPlacementParams(to: $0) },
                 pendingTasks: wizard.pendingTasks,
                 onBack: { wizard.goBack() },
-                onNext: { wizard.goNext() },
+                onNext: {
+                    let before = wizard.currentStep
+                    wizard.goNext()
+                    if wizard.currentStep != before { tutorialCoach?.handle(.tasksStepNext) }
+                },
                 pools: pools,
                 sources: wizard.sources,
                 supplyInfoBySourceId: wizard.supplyInfoBySourceId,
@@ -507,6 +527,7 @@ struct BoardWizardView: View {
                 onBack: { wizard.goBack() },
                 onComplete: { boardId, status in
                     onComplete(boardId, status.rawValue)
+                    if status == .active { tutorialCoach?.handle(.boardActivated) }
                 },
                 onTemplateComplete: onTemplateComplete,
                 pools: pools

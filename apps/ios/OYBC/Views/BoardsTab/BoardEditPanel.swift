@@ -247,6 +247,7 @@ struct BoardEditPanel: View {
                     onSave()
                 }
                 .disabled(!canSave)
+                .tutorialAnchor(.editSave, radius: Riso.pill)
             }
             .padding(.horizontal, Riso.gutter)
             .padding(.top, 12)

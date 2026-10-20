@@ -17,21 +17,20 @@ import FirebaseAuth
 struct AuthGateView<Content: View>: View {
     @ObservedObject var authService: AuthService
     @StateObject private var networkMonitor = NetworkMonitor()
-    @StateObject private var tutorialStore = TutorialProgressStore()
     let content: () -> Content
 
     var body: some View {
         Group {
             if authService.isLoading {
                 loadingView
-            } else if authService.currentUser != nil {
-                content()
+            } else if let userId = authService.currentUser?.id {
+                TutorialScope(authService: authService, userId: userId, content: content)
+                    .id(userId)
                     .environmentObject(authService)
                     .environmentObject(authService.syncService)
                     .environmentObject(authService.notificationService)
                     .environmentObject(NotificationDelegate.shared)
                     .environmentObject(networkMonitor)
-                    .environmentObject(tutorialStore)
             } else {
                 LoginView(authService: authService)
             }

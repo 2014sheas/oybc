@@ -71,6 +71,7 @@ struct SquareSheetCountingView: View {
                 entry = SquareSheetEntry(scopeTaskId: content.taskId, isRemove: false)
             }
         }
+        .tutorialAnchor(.logChips)
         .padding(.top, 6)
 
         if let open = entryOpen {
@@ -83,6 +84,7 @@ struct SquareSheetCountingView: View {
 
         if showsStrip, let strip {
             UndoStrip(text: strip.text, disabled: content.isBusy, busyLook: content.showsBusyLook, onUndo: actions.onUndo)
+                .tutorialAnchor(.undoStrip)
                 .padding(.top, 10)
         }
 

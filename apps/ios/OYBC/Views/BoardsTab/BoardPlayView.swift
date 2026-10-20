@@ -136,6 +136,7 @@ struct BoardPlayView: View {
     /// `BoardActionsPresenter`'s `onRemoved` wiring below. Nil for the
     /// standalone destination, where it's never called.
     var onBoardRemoved: (() -> Void)? = nil
+    @Environment(\.tutorialCoach) var tutorialCoach // Getting Started hooks; nil outside a lesson
     @EnvironmentObject var authService: AuthService
     // internal for the +BoardActions extension split (Board Edit consolidation)
     @Environment(\.dismiss) var dismiss
@@ -158,8 +159,8 @@ struct BoardPlayView: View {
     // achievement-square config sheet (for the pickers) and the per-
     // cell badge data computation. Refreshed alongside the task data
     // so the sheet always sees up-to-date data when opened.
-    private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
-    private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
+    var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
+    var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
 
     // Interaction write-state now lives on the view model (B2-I2). Read-only
     // shim so the many render sites that gate on `isProcessing` are untouched;
@@ -275,7 +276,8 @@ struct BoardPlayView: View {
         pagerSwipeActive: Bool = false,
         onResumeDraft: ((String) -> Void)? = nil,
         onEditModeChange: ((Bool) -> Void)? = nil,
-        onBoardRemoved: (() -> Void)? = nil
+        onBoardRemoved: (() -> Void)? = nil,
+        database: AppDatabase = .shared // the tutorial sandbox in a lesson
     ) {
         self.boardId = boardId
         self.onOpenBoard = onOpenBoard
@@ -285,7 +287,7 @@ struct BoardPlayView: View {
         self.onEditModeChange = onEditModeChange
         self.onBoardRemoved = onBoardRemoved
         _viewModel = StateObject(
-            wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil)
+            wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil, database: database, arrivalStore: .forDatabase(database))
         )
     }
 
@@ -333,7 +335,7 @@ struct BoardPlayView: View {
     /// than computed here — the review flagged that a computed property runs
     /// the full kernel pass once per rendered CELL (O(size²) derivations per
     /// render).
-    private var kernelCellStates: [String: DerivationPass.CellState] {
+    var kernelCellStates: [String: DerivationPass.CellState] {
         viewModel.kernelCellStates
     }
 
@@ -481,6 +483,7 @@ struct BoardPlayView: View {
                             withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
                         }
                     )
+                    .tutorialAnchor(.undoToast)
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 100)
                 }
@@ -736,43 +739,6 @@ struct BoardPlayView: View {
         }
     }
 
-    // MARK: - Phase 6.3: per-cell achievement-task badge data
-
-    /// Compute the achievement-task badge for one BoardTask. nil if the
-    /// backing Task is not ACHIEVEMENT-typed (or the kernel has no
-    /// achievement metadata for it — e.g. no reference set). Mirrors the
-    /// TS-side `achievementBadgesByBoardTaskId` memo in BoardPlayPage.tsx.
-    ///
-    /// Board-integrity PR-3 — the met/count/required numbers come straight
-    /// from `kernelCellStates`; only the display NAME lookups (board /
-    /// template name) stay local, since names aren't part of the kernel's
-    /// completion-derivation domain.
-    private func achievementBadge(for bt: BoardTask) -> AchievementSquareBadgeData? {
-        guard let task = taskMap[bt.taskId], task.type == .achievement else { return nil }
-        guard let achievement = kernelCellStates[bt.id]?.achievement else { return nil }
-        switch achievement.mode {
-        case .specificBoard:
-            let ref = achievement.referencedBoardId.flatMap { refId in
-                allBoardsInWorkspace.first(where: { $0.id == refId && !$0.isDeleted })
-            }
-            return AchievementSquareBadgeData(
-                mode: .specificBoard,
-                referencedBoardName: ref?.name,
-                referencedBoardCompleted: achievement.referencedBoardCompleted ?? false
-            )
-        case .recurringTemplate:
-            let template = achievement.referencedTemplateId.flatMap { tid in
-                allTemplatesInWorkspace.first(where: { $0.id == tid })
-            }
-            return AchievementSquareBadgeData(
-                mode: .recurringTemplate,
-                templateName: template?.name,
-                templateInWindowMet: achievement.templateInWindowMet ?? 0,
-                templateRequiredCount: achievement.templateRequiredCount ?? 0
-            )
-        }
-    }
-
     // `risoPlayHeader` + `risoBackButton` + `risoEndedText` + `risoExpiryText`
     // moved to `BoardPlayView+Header.swift`; `handleBoardItem` +
     // `boardActionsPresenter` moved to `BoardPlayView+BoardActions.swift`
@@ -1000,6 +966,7 @@ struct BoardPlayView: View {
         // Applied at the call site (not inside RisoBoardPlayCell) so the
         // snapshot-covered cell internals stay untouched.
         .arrivePulse(active: task.map { arrivedTaskIds.contains($0.id) } ?? false)
+        .tutorialAnchor(.square(index), radius: Riso.cellRadius)
     }
 
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)
@@ -1052,6 +1019,7 @@ struct BoardPlayView: View {
     // internal for the +BoardActions extension split
     func triggerBoardSavedToast() {
         withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = true }
+        tutorialCoach?.handle(.editSaved)
         _Concurrency.Task { @MainActor in
             try? await _Concurrency.Task.sleep(nanoseconds: 2_400_000_000)
             withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = false }

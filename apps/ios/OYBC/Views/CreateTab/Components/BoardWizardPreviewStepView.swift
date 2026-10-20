@@ -782,6 +782,7 @@ private extension BoardWizardPreviewStepView {
                     performCreation()
                 }
                 .disabled(isCreating || isBelowCoreFloor)
+                .tutorialAnchor(.activateBoard)
             }
         }
         .padding(.horizontal, Riso.gutter)

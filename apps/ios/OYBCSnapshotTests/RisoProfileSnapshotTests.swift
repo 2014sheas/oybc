@@ -172,7 +172,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
 
     /// Assembles the same pure-props components `ProfileView` composes, in
     /// the same order, with static fixture data standing in for
-    /// `AuthService`/`TutorialProgressStore`/`ProfileHomeViewModel`.
+    /// `AuthService`/`TutorialCoordinator`/`ProfileHomeViewModel`.
     @ViewBuilder
     private func composedProfileHome(
         displayName: String = "Alex Rivera",
@@ -200,7 +200,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
 
                     if gettingStarted == .dayOneHero {
                         RisoGettingStartedHero(
-                            done: tutorialDone, total: TutorialProgressStore.totalLessons, onStart: {}
+                            done: tutorialDone, total: TutorialLessonID.total, onStart: {}
                         )
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
@@ -216,7 +216,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
                                 icon: "checkmark.circle",
                                 label: "Getting started",
                                 caption: nextLessonTitle.map { "Next: \($0)" },
-                                value: "\(tutorialDone)/\(TutorialProgressStore.totalLessons)",
+                                value: "\(tutorialDone)/\(TutorialLessonID.total)",
                                 chevron: true
                             )
                         }

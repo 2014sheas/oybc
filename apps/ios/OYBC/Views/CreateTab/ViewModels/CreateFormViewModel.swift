@@ -183,10 +183,18 @@ final class CreateFormViewModel {
     // MARK: - DB injection
 
     /// Injected for tests; defaults to the production singleton.
-    @ObservationIgnored private let database: AppDatabase
+    @ObservationIgnored private var database: AppDatabase
 
     init(database: AppDatabase = .shared) {
         self.database = database
+    }
+
+    /// Re-points the form at a host-injected database. The hosting views build
+    /// this model as `@State` (before their `database` is readable), so they
+    /// call this on appear — a tutorial sandbox lesson must never write to the
+    /// user's real store.
+    func useDatabase(_ newDatabase: AppDatabase) {
+        database = newDatabase
     }
 
     // MARK: - Actions

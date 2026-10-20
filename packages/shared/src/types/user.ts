@@ -19,6 +19,65 @@ export type DefaultCenterSquareType = CenterSquareType.FREE | CenterSquareType.N
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+/**
+ * One tutorial lesson's saved state. A lesson that is not started has NO
+ * entry (absence = `notStarted`), so the map only carries lessons the user
+ * has touched.
+ */
+export type TutorialLessonProgress =
+  | { status: 'inProgress'; step: number }
+  | { status: 'done' };
+
+/**
+ * Getting Started tutorial progress (iOS tutorial board). Synced inside the
+ * user's preferences so it follows the account. Web has no tutorial board and
+ * only round-trips the value (`mergeUserPreferences` keeps it verbatim).
+ * Lesson ids are open strings so a newer client's lesson survives a pass
+ * through an older one.
+ */
+export interface TutorialProgress {
+  lessons: Record<string, TutorialLessonProgress>;
+  /** Whether the Boards-tab card was dismissed (allowed once the middle row is done). */
+  cardDismissed: boolean;
+}
+
+export const DEFAULT_TUTORIAL_PROGRESS: TutorialProgress = {
+  lessons: {},
+  cardDismissed: false,
+};
+
+/**
+ * Forward-compatible decode of a (possibly untrusted) tutorial progress value.
+ * Malformed lesson entries are dropped; a malformed container yields the default.
+ */
+export function mergeTutorialProgress(raw: unknown): TutorialProgress {
+  if (typeof raw !== 'object' || raw === null) {
+    return { lessons: {}, cardDismissed: false };
+  }
+  const candidate = raw as { lessons?: unknown; cardDismissed?: unknown };
+  const lessons: Record<string, TutorialLessonProgress> = {};
+  if (typeof candidate.lessons === 'object' && candidate.lessons !== null) {
+    for (const [id, value] of Object.entries(candidate.lessons as Record<string, unknown>)) {
+      if (typeof value !== 'object' || value === null) continue;
+      const entry = value as { status?: unknown; step?: unknown };
+      if (entry.status === 'done') {
+        lessons[id] = { status: 'done' };
+      } else if (
+        entry.status === 'inProgress' &&
+        typeof entry.step === 'number' &&
+        Number.isInteger(entry.step) &&
+        entry.step >= 0
+      ) {
+        lessons[id] = { status: 'inProgress', step: entry.step };
+      }
+    }
+  }
+  return {
+    lessons,
+    cardDismissed: typeof candidate.cardDismissed === 'boolean' ? candidate.cardDismissed : false,
+  };
+}
+
 export interface UserPreferences {
   weekStartDay: WeekStartDay;
   defaultBoardSize: BoardSize;
@@ -62,6 +121,12 @@ export interface UserPreferences {
   dailyPlayReminderEnabled: boolean;
   /** Daily play reminder time of day, 24h "HH:mm" (local). Default "20:00". */
   dailyPlayReminderTime: string;
+
+  /**
+   * Getting Started tutorial progress (iOS tutorial board). Synced with the
+   * account; web only round-trips it.
+   */
+  tutorialProgress: TutorialProgress;
 }
 
 /**
@@ -88,6 +153,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   recurringWindowReminders: true,
   dailyPlayReminderEnabled: false,
   dailyPlayReminderTime: '20:00',
+  tutorialProgress: DEFAULT_TUTORIAL_PROGRESS,
 };
 
 /** 24-hour "HH:mm" time-of-day, 00:00–23:59. */
@@ -105,7 +171,10 @@ const HH_MM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
  * remote payload can't poison the local record.
  */
 export function mergeUserPreferences(
-  partial: Partial<UserPreferences> | null | undefined
+  partial:
+    | (Partial<Omit<UserPreferences, 'tutorialProgress'>> & { tutorialProgress?: unknown })
+    | null
+    | undefined
 ): UserPreferences {
   if (!partial) return { ...DEFAULT_USER_PREFERENCES };
 
@@ -218,6 +287,7 @@ export function mergeUserPreferences(
     recurringWindowReminders,
     dailyPlayReminderEnabled,
     dailyPlayReminderTime,
+    tutorialProgress: mergeTutorialProgress(partial.tutorialProgress),
   };
 }
 

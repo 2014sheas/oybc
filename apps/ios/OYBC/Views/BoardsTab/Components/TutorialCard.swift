@@ -1,25 +1,33 @@
 import SwiftUI
 
-/// Pinned gold "Getting Started" card on the Boards home (handoff §0a,
-/// screenshot 20). Tapping it opens the tutorial board; the ✕ dismisses it
-/// (the tutorial stays reachable from Profile). Props-only / snapshot-testable.
+/// Pinned gold "Getting started" card on the Boards home (handoff 01). The pill
+/// reads START HERE, then KEEP GOING once a lesson is done, then BINGO once the
+/// free middle row is. The ✕ appears only when the middle row is done; the
+/// dismissal is stored with the account. Tapping opens the tutorial board.
+/// Props-only / snapshot-testable.
 struct TutorialCard: View {
     let done: Int
     let total: Int
+    /// The three free lessons are done: the pill reads BINGO and the ✕ shows.
+    var middleRowDone: Bool = false
     let onOpen: () -> Void
     let onDismiss: () -> Void
 
-    private var complete: Bool { done >= total }
     private var fraction: Double {
         total > 0 ? Double(done) / Double(total) : 0
+    }
+
+    /// START HERE → KEEP GOING → BINGO.
+    private var pill: String {
+        if middleRowDone { return "BINGO" }
+        return done >= 1 ? "KEEP GOING" : "START HERE"
     }
 
     var body: some View {
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 8) {
-                // Top row: "START HERE" pill + title + dismiss ✕
                 HStack(spacing: 8) {
-                    Text(complete ? "DONE" : "START HERE")
+                    Text(pill)
                         .font(.risoBody(10, .bold))
                         .tracking(0.6)
                         .foregroundStyle(Color.risoPaper)
@@ -27,25 +35,25 @@ struct TutorialCard: View {
                         .padding(.horizontal, 8)
                         .background(Capsule().fill(Color.risoInk))
 
-                    Text(complete ? "You know OYBC" : "Getting started")
+                    Text("Getting started")
                         .font(.risoHead(17, .extraBold))
                         .foregroundStyle(Color.risoInkStatic)
 
                     Spacer(minLength: 4)
 
-                    Button(action: onDismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color.risoInkStatic)
-                            .frame(width: 26, height: 26)
-                            .background(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                    if middleRowDone {
+                        Button(action: onDismiss) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.risoInkStatic)
+                                .frame(width: 26, height: 26)
+                                .background(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Hide tutorial")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Hide tutorial")
                 }
 
-
-                // Progress bar + count
                 HStack(spacing: 8) {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -77,8 +85,9 @@ struct TutorialCard: View {
     ZStack {
         RisoPaperBackground()
         VStack(spacing: 16) {
-            TutorialCard(done: 3, total: 8, onOpen: {}, onDismiss: {})
-            TutorialCard(done: 8, total: 8, onOpen: {}, onDismiss: {})
+            TutorialCard(done: 0, total: 9, onOpen: {}, onDismiss: {})
+            TutorialCard(done: 1, total: 9, onOpen: {}, onDismiss: {})
+            TutorialCard(done: 3, total: 9, middleRowDone: true, onOpen: {}, onDismiss: {})
         }
         .padding(20)
     }

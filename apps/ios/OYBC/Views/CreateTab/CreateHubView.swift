@@ -60,7 +60,14 @@ struct CreateHubView: View {
     /// templateId, navigating to a non-existent board.
     var onTemplateCompleted: ((_ templateId: String) -> Void)? = nil
 
-    @State private var vm = CreateHubViewModel()
+    /// Injected database (defaults to the app singleton). The Getting Started
+    /// "Create a board" lesson passes its throwaway sandbox so the hub, the
+    /// wizard and every write stay off the user's real store.
+    var database: AppDatabase = .shared
+
+    @State private var vm: CreateHubViewModel
+    @Environment(\.tutorialCoach) private var tutorialCoach
+    @Environment(\.tutorialSignals) private var tutorialSignals
 
     /// Phase 6.1d: pending core boards (daily/weekly/monthly/yearly) that
     /// the user hasn't created yet for the current windows, surfaced via
@@ -71,7 +78,32 @@ struct CreateHubView: View {
     /// rather than embedding it in `CreateHubViewModel` — it's already an
     /// `@Observable` and nesting adds an indirection without removing state
     /// from the view.
-    @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
+    @State private var pendingRecurringVM: PendingRecurringBoardsViewModel
+
+    /// Memberwise-style initialiser; only `userId` and `preferences` are required.
+    init(
+        userId: String,
+        preferences: UserPreferences,
+        pendingRecurringTimeframe: Binding<Timeframe?> = .constant(nil),
+        pendingTargetWindowDate: Binding<Date?> = .constant(nil),
+        pendingDraftId: Binding<String?> = .constant(nil),
+        pendingStartRecurringWizard: Binding<Bool> = .constant(false),
+        onBoardCompleted: ((_ boardId: String, _ status: String) -> Void)? = nil,
+        onTemplateCompleted: ((_ templateId: String) -> Void)? = nil,
+        database: AppDatabase = .shared
+    ) {
+        self.userId = userId
+        self.preferences = preferences
+        self.pendingRecurringTimeframe = pendingRecurringTimeframe
+        self.pendingTargetWindowDate = pendingTargetWindowDate
+        self.pendingDraftId = pendingDraftId
+        self.pendingStartRecurringWizard = pendingStartRecurringWizard
+        self.onBoardCompleted = onBoardCompleted
+        self.onTemplateCompleted = onTemplateCompleted
+        self.database = database
+        _vm = State(initialValue: CreateHubViewModel(database: database))
+        _pendingRecurringVM = State(initialValue: PendingRecurringBoardsViewModel(database: database))
+    }
 
     var body: some View {
         switch vm.mode {
@@ -143,6 +175,8 @@ struct CreateHubView: View {
         BoardWizardView(
             userId: userId,
             preferences: preferences,
+            database: database,
+            prefillName: tutorialSignals.sandboxed ? "Sample board" : nil,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
@@ -207,6 +241,7 @@ struct CreateHubView: View {
                             vm.enterCoreBoardWizard(timeframe: slot.timeframe)
                         }
                     )
+                    .tutorialDimmed(tutorialSignals.sandboxed)
 
                     // Board Creation Split (iOS PR A) — two stacked
                     // full-width CTAs under a "NEW BOARD" section label,
@@ -219,11 +254,15 @@ struct CreateHubView: View {
 
                         CreateHubBoardCTAView(kind: .oneOff) {
                             vm.enterFreshWizard(startRecurring: false)
+                            tutorialCoach?.handle(.oneOffBoardStarted)
                         }
+                        .tutorialAnchor(.startOneOffCTA)
 
                         CreateHubBoardCTAView(kind: .recurring) {
                             vm.enterFreshWizard(startRecurring: true)
                         }
+                        // Recurring boards are a Pro lesson: only the one-off path is lit.
+                        .tutorialDimmed(tutorialSignals.sandboxed)
                     }
 
                     if !vm.drafts.isEmpty {

@@ -68,7 +68,7 @@ struct BoardListView: View {
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
-    @EnvironmentObject var tutorialStore: TutorialProgressStore
+    @EnvironmentObject var tutorial: TutorialCoordinator
     /// Board Edit redesign slice 4 (D5) — the backstop auto-close pass waits
     /// on this session's first pull (with a timeout / offline fallback)
     /// before sealing, so it doesn't race a peer's pulled Reopen.
@@ -217,7 +217,7 @@ struct BoardListView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
-                if !tutorialStore.isCardDismissed {
+                if tutorial.progress.showsCard {
                     tutorialCardRow
                         .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                         .listRowSeparator(.hidden)
@@ -471,10 +471,11 @@ struct BoardListView: View {
 
     private var tutorialCardRow: some View {
         TutorialCard(
-            done: tutorialStore.completedCount,
-            total: TutorialProgressStore.totalLessons,
+            done: tutorial.progress.doneCount,
+            total: TutorialLessonID.total,
+            middleRowDone: tutorial.progress.middleRowDone,
             onOpen: { onOpenTutorial?() },
-            onDismiss: { tutorialStore.dismissCard() }
+            onDismiss: { tutorial.dismissCard() }
         )
     }
 
@@ -515,7 +516,7 @@ struct BoardListView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
 
-            if !tutorialStore.isCardDismissed {
+            if tutorial.progress.showsCard {
                 tutorialCardRow
                     .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                     .listRowSeparator(.hidden)

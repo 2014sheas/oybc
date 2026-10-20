@@ -40,6 +40,8 @@ struct RisoLibrarySheetView: View {
     // Parent-board tasks
     @State private var parentTasksVM = ParentBoardTasksViewModel()
     @State private var parentTasksLoaded = false
+    /// The host's database (the tutorial sandbox inside a lesson).
+    @Environment(\.appDatabase) private var database
 
     private var trimmedQuery: String {
         searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -72,6 +74,7 @@ struct RisoLibrarySheetView: View {
     private var entryButton: some View {
         Button {
             if hasParentBoards && !parentTasksLoaded {
+                parentTasksVM = ParentBoardTasksViewModel(database: database)
                 parentTasksVM.reloadAsync(userId: userId, childTimeframe: currentTimeframe)
                 parentTasksLoaded = true
             }

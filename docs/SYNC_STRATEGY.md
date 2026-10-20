@@ -491,6 +491,8 @@ Board Preferences (Riso 5a): `expiringReminders` — `boolean` (default true). (
 
 Notifications (Phase 7): `notificationsEnabled` — `boolean` (default false); `recurringWindowReminders` — `boolean` (default true); `dailyPlayReminderEnabled` — `boolean` (default false); `dailyPlayReminderTime` — `string` `"HH:mm"` (default `"20:00"`).
 
+Tutorial: `tutorialProgress` — `{ lessons: { <id>: { status: 'inProgress', step } | { status: 'done' } }, cardDismissed }` (iOS tutorial board; web only round-trips it; malformed lesson entries are dropped by `mergeUserPreferences`).
+
 These all ride the existing user-prefs LWW path — **no new collection**. Notifications are scheduled per-device from the synced prefs; there is no cross-device de-duplication problem because delivery is **local** to each device and the scheduled identifiers are deterministic (`expiry-<boardId>` etc.), so each device independently converges on the same desired set. A prefs change on one device replicates and the other device's next reconcile (on app-open) picks it up. (Phase 7 is iOS-only at the feature level; web round-trips the fields but does not act on them yet — see CLAUDE.md §Notifications.)
 
 All newer fields are `.optional()` in `UserPreferencesSchema` and filled by `mergeUserPreferences()` on the pull path, so an older peer's prefs doc never fails validation.

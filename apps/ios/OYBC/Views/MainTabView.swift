@@ -24,17 +24,12 @@ struct MainTabView: View {
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.scenePhase) private var scenePhase
 
-    @EnvironmentObject var tutorialStore: TutorialProgressStore
-
     @State private var selectedTab: Int = 0
     @State private var boardsPath: NavigationPath = NavigationPath()
     @State private var tasksPath: NavigationPath = NavigationPath()
     /// Profile-tab stack, bound so tutorial deep-links can push sub-pages
     /// (Recurring templates / Default pools) directly.
     @State private var profilePath: NavigationPath = NavigationPath()
-    /// Tutorial completion celebration + the "Preview a GREENLOG" sample.
-    @State private var showTutorialGreenlog = false
-    @State private var showGreenlogPreview = false
     /// Phase 6.1: when the user taps Create on the Boards-tab Recurring
     /// Boards banner, BoardListView calls back here to (a) switch to the
     /// Create tab and (b) stash the timeframe. CreateHubView reads this
@@ -85,50 +80,8 @@ struct MainTabView: View {
     /// Profile "Getting started" row). Lands on the Boards tab.
     private func openTutorial() {
         selectedTab = 0
+        boardsPath = NavigationPath()
         boardsPath.append(TutorialRoute())
-    }
-
-    /// Routes a tutorial lesson's "Try it" deep-link. The lesson is already
-    /// marked learned by the sheet; this just navigates to the real flow.
-    private func handleTutorialTry(_ link: TutorialDeepLink) {
-        switch link {
-        case .createBoard:
-            selectedTab = 2
-        case .addTasks:
-            selectedTab = 1
-        case .openABoard:
-            // Newest board (fetchBoards is updatedAt-desc) if any, else Create.
-            // Read off-main per the codebase's "never block UI" convention.
-            let userId = authService.currentUser?.id
-            _Concurrency.Task.detached {
-                let boards = userId.flatMap { try? AppDatabase.shared.fetchBoards(userId: $0) } ?? []
-                let newestId = boards.first?.id
-                await MainActor.run {
-                    if let id = newestId { openBoard(id) } else { selectedTab = 2 }
-                }
-            }
-        case .boardSettings:
-            selectedTab = 3
-            // Reset + push together, deferred one runloop so the Profile
-            // NavigationStack is mounted before its bound path is mutated (first
-            // cross-tab switch may not have rendered it). Resetting first avoids
-            // stacking duplicate routes on repeated deep-links.
-            DispatchQueue.main.async {
-                profilePath = NavigationPath()
-                profilePath.append(ProfileRoute.boardSettings)
-            }
-        case .settings:
-            selectedTab = 3
-            // Same reset+push pattern as .boardSettings — Profile reorg PR1
-            // moved Settings off the Profile root, so the deep-link now
-            // pushes the sub-page instead of just landing on the tab.
-            DispatchQueue.main.async {
-                profilePath = NavigationPath()
-                profilePath.append(ProfileRoute.settings)
-            }
-        case .shareGreenlog:
-            showGreenlogPreview = true
-        }
     }
 
     private func openBoard(_ boardId: String) {
@@ -171,45 +124,7 @@ struct MainTabView: View {
     }
 
     var body: some View {
-        ZStack {
-            tabs
-
-            // ── Tutorial completion celebration ──
-            if showTutorialGreenlog {
-                TutorialGreenlogOverlay(
-                    onCreateBoard: {
-                        showTutorialGreenlog = false
-                        boardsPath = NavigationPath()
-                        selectedTab = 2
-                    },
-                    onDismiss: {
-                        showTutorialGreenlog = false
-                        boardsPath = NavigationPath() // pop tutorial → boards list
-                    }
-                )
-                .ignoresSafeArea()
-                .transition(.opacity)
-                .zIndex(30)
-            }
-
-            // ── "Preview a GREENLOG" sample (tutorial Share lesson) ──
-            if showGreenlogPreview {
-                let sample = MomentPresentation.greenlogSample
-                RisoMomentOverlay(
-                    kind: sample.kind, replay: sample.replay, cells: sample.cells,
-                    boardName: "Sample board", linesCompleted: 12,
-                    // Preview only — both buttons just close it (no real share).
-                    onShare: { showGreenlogPreview = false },
-                    onBack: { showGreenlogPreview = false },
-                    onNewBoard: { showGreenlogPreview = false }
-                )
-                .ignoresSafeArea()
-                .transition(.opacity)
-                .zIndex(30)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: showTutorialGreenlog)
-        .animation(.easeInOut(duration: 0.25), value: showGreenlogPreview)
+        tabs
     }
 
     private var tabs: some View {
@@ -250,9 +165,17 @@ struct MainTabView: View {
                 )
                 .navigationDestination(for: TutorialRoute.self) { _ in
                     TutorialBoardView(
-                        onTry: { lesson in handleTutorialTry(lesson.target) },
                         onBack: { if !boardsPath.isEmpty { boardsPath.removeLast() } },
-                        onComplete: { showTutorialGreenlog = true }
+                        // "Go to my boards": back to the Boards list, tutorial popped.
+                        onGoToBoards: {
+                            boardsPath = NavigationPath()
+                            selectedTab = 0
+                        },
+                        // The tutorial Greenlog's "Start my first board": the Create tab.
+                        onStartFirstBoard: {
+                            boardsPath = NavigationPath()
+                            selectedTab = 2
+                        }
                     )
                 }
                 // NOTE: the per-timeframe Core Board Browser
@@ -461,7 +384,6 @@ struct MainTabView: View {
         .environmentObject(AuthService())
         .environmentObject(NotificationService())
         .environmentObject(NotificationDelegate.shared)
-        .environmentObject(TutorialProgressStore())
         .environmentObject(SyncService())
         .environmentObject(NetworkMonitor())
 }

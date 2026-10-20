@@ -8,7 +8,7 @@ import Foundation
 ///   - the Shared counters section's most-recently-logged counters.
 ///
 /// Identity (name/email/avatar) and Getting Started progress are
-/// environment-sourced (`AuthService` / `TutorialProgressStore`) and read
+/// environment-sourced (`AuthService` / `TutorialCoordinator`) and read
 /// directly by `ProfileView` — this view model only owns state that needs a
 /// DB read, following the `AppDatabase`-injection seam (CLAUDE.md "DB access
 /// in new/touched ViewModels") so it's constructible against

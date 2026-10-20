@@ -16,13 +16,13 @@ import SwiftUI
 ///    "+ Log" raises the hub's "Logged +N · Undo" toast (bottom overlay).
 ///
 /// Container stays thin: identity/tutorial state comes straight from
-/// `AuthService`/`TutorialProgressStore` (env objects), DB-backed state
+/// `AuthService`/`TutorialCoordinator` (env objects), DB-backed state
 /// (streaks, repeating-board count, counters) comes from the injected
 /// `ProfileHomeViewModel`. All visual pieces are their own files under
 /// `Components/` so this body stays a thin composition, not a monolith.
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
-    @EnvironmentObject var tutorialStore: TutorialProgressStore
+    @EnvironmentObject var tutorial: TutorialCoordinator
 
     // MARK: - Inputs
 
@@ -79,13 +79,13 @@ struct ProfileView: View {
 
     private var gettingStartedDisplay: ProfileHomeViewModel.GettingStartedDisplay {
         ProfileHomeViewModel.gettingStartedDisplay(
-            completedCount: tutorialStore.completedCount,
-            isComplete: tutorialStore.isComplete
+            completedCount: tutorial.progress.doneCount,
+            isComplete: tutorial.progress.isComplete
         )
     }
 
     private var nextLessonTitle: String? {
-        nextIncompleteLessonTitle(completedIDs: tutorialStore.completedLessonIDs)
+        nextIncompleteLessonTitle(progress: tutorial.progress)
     }
 
     // MARK: - Body
@@ -103,8 +103,8 @@ struct ProfileView: View {
 
                     if gettingStartedDisplay == .dayOneHero {
                         RisoGettingStartedHero(
-                            done: tutorialStore.completedCount,
-                            total: TutorialProgressStore.totalLessons,
+                            done: tutorial.progress.doneCount,
+                            total: TutorialLessonID.total,
                             onStart: { onOpenTutorial?() }
                         )
                         .padding(.horizontal, Riso.gutter)
@@ -268,7 +268,7 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Getting started row (0 < completedCount < 8)
+    // MARK: - Getting started row (0 < completedCount < 9)
 
     private var gettingStartedRow: some View {
         Button { onOpenTutorial?() } label: {
@@ -276,7 +276,7 @@ struct ProfileView: View {
                 icon: "checkmark.circle",
                 label: "Getting started",
                 caption: nextLessonTitle.map { "Next: \($0)" },
-                value: "\(tutorialStore.completedCount)/\(TutorialProgressStore.totalLessons)",
+                value: "\(tutorial.progress.doneCount)/\(TutorialLessonID.total)",
                 chevron: true
             )
         }
@@ -321,7 +321,7 @@ struct ProfileView: View {
         ProfileView()
             .environmentObject(authService)
             .environmentObject(authService.syncService)
-            .environmentObject(TutorialProgressStore())
+            .environmentObject(TutorialCoordinator.preview())
             .environmentObject(NetworkMonitor())
     }
 }

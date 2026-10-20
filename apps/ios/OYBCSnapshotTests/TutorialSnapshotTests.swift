@@ -3,86 +3,177 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the Getting Started tutorial (handoff §0a): the pinned
-/// home card, the tutorial board (0/8 + partial + complete), the lesson sheet
-/// (undone + learned), and the mascot-free completion overlay. Light + dark.
+/// Snapshot coverage for the Getting Started tutorial (handoff 01-07): the pinned
+/// Boards-tab card, the nine-square board in each state, the Pro stub sheet, the
+/// lesson-complete card, the free-row card, the Bingo toast, the walkthrough
+/// layers (coach mark, scrim + spotlight over a real control) and the tutorial
+/// Greenlog. Light + dark.
 @MainActor
 final class TutorialSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    /// A fresh store seeded with the first `done` lessons complete, on an
-    /// isolated in-memory UserDefaults suite (no cross-test bleed).
-    private func seededStore(done: Int, suite: String) -> TutorialProgressStore {
-        let defaults = UserDefaults(suiteName: "tut-snap-\(suite)")!
-        defaults.removePersistentDomain(forName: "tut-snap-\(suite)")
-        let store = TutorialProgressStore(defaults: defaults)
-        for lesson in tutorialLessons.prefix(done) { store.markLearned(lesson.id) }
-        return store
+    private func snap<V: View>(_ view: V, width: CGFloat = 393, height: CGFloat, dark: Bool = false, name: String = #function, line: UInt = #line) {
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: width, height: height), traits: .init(userInterfaceStyle: dark ? .dark : .light)),
+            record: recordMode,
+            file: #filePath, testName: name, line: line
+        )
     }
 
-    // MARK: - Tutorial card
+    // MARK: - Progress fixtures
 
-    private func cardView(done: Int) -> some View {
+    private var fresh: TutorialProgress { .empty }
+
+    /// Create a task done, Create a board left at step 3 of 7.
+    private var inProgress: TutorialProgress {
+        var p = TutorialProgress.empty
+        p.set(.createTask, .done)
+        p.set(.createBoard, .inProgress(step: 3))
+        return p
+    }
+
+    private var middleRow: TutorialProgress {
+        var p = TutorialProgress.empty
+        for id in TutorialLessonID.middleRow { p.set(id, .done) }
+        return p
+    }
+
+    private var allDone: TutorialProgress {
+        var p = TutorialProgress.empty
+        for id in TutorialLessonID.allCases { p.set(id, .done) }
+        return p
+    }
+
+    // MARK: - Boards-tab card (handoff 01)
+
+    private func cardView(done: Int, middleRowDone: Bool = false) -> some View {
         ZStack {
             Color.risoPaper
-            TutorialCard(done: done, total: 8, onOpen: {}, onDismiss: {})
+            TutorialCard(done: done, total: 9, middleRowDone: middleRowDone, onOpen: {}, onDismiss: {})
                 .padding(20)
         }
     }
 
-    func testCardInProgressLight() {
-        assertSnapshot(of: cardView(done: 3), as: .image(layout: .fixed(width: 393, height: 170)), record: recordMode)
-    }
-    func testCardInProgressDark() {
-        assertSnapshot(of: cardView(done: 3), as: .image(layout: .fixed(width: 393, height: 170), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
-    }
-    func testCardCompleteLight() {
-        assertSnapshot(of: cardView(done: 8), as: .image(layout: .fixed(width: 393, height: 170)), record: recordMode)
+    func testCardStartHereLight() { snap(cardView(done: 0), height: 120) }
+    func testCardStartHereDark() { snap(cardView(done: 0), height: 120, dark: true) }
+    func testCardKeepGoingLight() { snap(cardView(done: 1), height: 120) }
+    func testCardKeepGoingDark() { snap(cardView(done: 1), height: 120, dark: true) }
+    func testCardBingoLight() { snap(cardView(done: 3, middleRowDone: true), height: 120) }
+    func testCardBingoDark() { snap(cardView(done: 3, middleRowDone: true), height: 120, dark: true) }
+
+    // MARK: - Tutorial board (handoff 02)
+
+    private func boardContent(_ progress: TutorialProgress, pop: TutorialLessonID? = nil) -> some View {
+        TutorialBoardContent(progress: progress, popLesson: pop)
     }
 
-    // MARK: - Tutorial board
+    func testBoardEmptyLight() { snap(boardContent(fresh), height: 640) }
+    func testBoardEmptyDark() { snap(boardContent(fresh), height: 640, dark: true) }
+    func testBoardInProgressLight() { snap(boardContent(inProgress), height: 640) }
+    func testBoardInProgressDark() { snap(boardContent(inProgress), height: 640, dark: true) }
+    func testBoardMiddleRowDoneLight() { snap(boardContent(middleRow), height: 900) }
+    func testBoardMiddleRowDoneDark() { snap(boardContent(middleRow), height: 900, dark: true) }
+    func testBoardAllDoneLight() { snap(boardContent(allDone), height: 640) }
+    func testBoardAllDoneDark() { snap(boardContent(allDone), height: 640, dark: true) }
 
-    private func boardView(store: TutorialProgressStore) -> some View {
-        TutorialBoardView(onTry: { _ in }, onBack: {}, onComplete: {})
-            .environmentObject(store)
-    }
+    // MARK: - Pro stub, lesson complete, toast, leave (handoff 03, 05, 06)
 
-    func testBoardEmptyLight() {
-        assertSnapshot(of: boardView(store: seededStore(done: 0, suite: "b0")),
-                       as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
-    }
-    func testBoardPartialLight() {
-        assertSnapshot(of: boardView(store: seededStore(done: 3, suite: "b3")),
-                       as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
-    }
-    func testBoardCompleteDark() {
-        assertSnapshot(of: boardView(store: seededStore(done: 8, suite: "b8")),
-                       as: .image(layout: .fixed(width: 393, height: 560), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
-    }
+    func testProSheetLight() { snap(TutorialProSheet(title: "Multi-step tasks"), height: 420) }
+    func testProSheetDark() { snap(TutorialProSheet(title: "Multi-step tasks"), height: 420, dark: true) }
 
-    // MARK: - Lesson sheet
-
-    private func lesson(_ id: String) -> TutorialLesson {
-        tutorialLessons.first(where: { $0.id == id })!
+    private func completeCard(_ subtitle: String) -> some View {
+        ZStack {
+            TutorialScrimShape.color
+            TutorialLessonCompleteCard(subtitle: subtitle)
+        }
+        .background(Color.risoPaper)
     }
 
-    func testLessonSheetUndoneLight() {
-        // "recurring" (Automate) — matches the prototype screenshot 19.
-        assertSnapshot(of: TutorialLessonSheet(lesson: lesson("recurring"), isLearned: false, onTry: { _ in }, onMark: { _ in }),
-                       as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
-    }
-    func testLessonSheetLearnedDark() {
-        assertSnapshot(of: TutorialLessonSheet(lesson: lesson("create"), isLearned: true, onTry: { _ in }, onMark: { _ in }),
-                       as: .image(layout: .fixed(width: 393, height: 560), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+    func testLessonCompleteLight() { snap(completeCard("Create a task · both tasks are in your library"), height: 420) }
+    func testLessonCompleteDark() { snap(completeCard("Complete a board · a Bingo and a Greenlog"), height: 420, dark: true) }
+
+    func testBingoToastLight() {
+        snap(TutorialBingoToast().padding(20).background(Color.risoPaper), height: 100)
     }
 
-    // MARK: - Completion overlay
+    func testLeaveSheetLight() { snap(TutorialLeaveSheet(), height: 360) }
 
-    func testCompletionOverlayLight() {
-        assertSnapshot(of: TutorialGreenlogOverlay(), as: .image(layout: .fixed(width: 393, height: 760)), record: recordMode)
+    // MARK: - Coach mark (handoff 03)
+
+    private func markView(_ mark: TutorialCoachMark) -> some View {
+        mark.padding(20).background(Color.risoPaper)
     }
-    func testCompletionOverlayDark() {
-        assertSnapshot(of: TutorialGreenlogOverlay(), as: .image(layout: .fixed(width: 393, height: 760), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+
+    func testCoachMarkActionLight() {
+        snap(markView(TutorialCoachMark(
+            lessonTitle: "Create a task", text: "Type a task, then tap Add.", step: 1, stepCount: 5, notch: .up
+        )), height: 170)
+    }
+
+    func testCoachMarkActionDark() {
+        snap(markView(TutorialCoachMark(
+            lessonTitle: "Create a task", text: "Type a task, then tap Add.", step: 1, stepCount: 5, notch: .up
+        )), height: 170, dark: true)
+    }
+
+    func testCoachMarkReadOnlyNextResumedNotchDownLight() {
+        snap(markView(TutorialCoachMark(
+            lessonTitle: "Complete a board", text: "Tapped by mistake? Undo lives here for a moment.",
+            step: 3, stepCount: 10, resumed: true, showsNext: true, notch: .down, notchOffset: 200
+        )), height: 170)
+    }
+
+    func testCoachMarkLongTitleAndTextDark() {
+        snap(markView(TutorialCoachMark(
+            lessonTitle: "Complete a board and finish the whole tutorial lesson",
+            text: "Action, then goal, then unit. The title fills itself in.", step: 3, stepCount: 5, notch: .up
+        )), height: 190, dark: true)
+    }
+
+    // MARK: - Scrim + spotlight over a real control (handoff 03)
+
+    /// The real coach layer over a mock screen: the real gold "+" button is lit
+    /// by a hole in the scrim, ringed in gold, with the mark below.
+    private func walkthroughOverScreen(step: Int, resumed: Bool = false) -> some View {
+        let coach = TutorialCoordinator.preview(
+            session: TutorialSession(lesson: .createTask, step: step, resumed: resumed)
+        )
+        return ZStack(alignment: .topLeading) {
+            RisoPaperBackground()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your library").risoKicker()
+                        Text("Tasks").risoH1()
+                    }
+                    Spacer()
+                    RisoIconButton(systemImage: "plus") {}
+                        .tutorialAnchor(.tasksPlus)
+                }
+                Text("Run 5k").font(.risoBody(15, .semibold)).padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading).risoCard()
+            }
+            .padding(20)
+        }
+        .tutorialCoachLayer(isRoot: true)
+        .environment(\.tutorialCoach, coach)
+    }
+
+    func testWalkthroughOverScreenLight() { snap(walkthroughOverScreen(step: 0), height: 420) }
+    func testWalkthroughOverScreenResumedDark() { snap(walkthroughOverScreen(step: 0, resumed: true), height: 420, dark: true) }
+
+    // MARK: - Tutorial Greenlog (handoff 2.6)
+
+    func testTutorialGreenlogLight() {
+        let m = MomentPresentation.tutorialGreenlog
+        snap(
+            RisoMomentOverlay(
+                kind: .greenlog, replay: m.replay, cells: m.cells, boardName: "Getting started", linesCompleted: 8,
+                beatOverride: momentFinalBeat(m.replay, kind: .greenlog), tutorialButtons: true
+            ),
+            height: 760
+        )
     }
 }

@@ -37,7 +37,7 @@ final class AppDatabase {
     /// Designated throwing initialiser used by `makeTestInstance()`. Keeps
     /// the production singleton's non-throwing `init()` (with fatalError
     /// on failure) untouched so existing call sites stay simple.
-    private init(dbQueue: DatabaseQueue) throws {
+    init(dbQueue: DatabaseQueue) throws {
         self.dbQueue = dbQueue
         try migrator.migrate(dbQueue)
     }
@@ -57,7 +57,7 @@ final class AppDatabase {
     /// - foreign_keys = ON: enforces FK constraints defined in the
     ///   schema. Required so FK violations fail the same way in both
     ///   production and tests.
-    private static func databaseConfiguration() -> Configuration {
+    static func databaseConfiguration() -> Configuration {
         var config = Configuration()
         config.prepareDatabase { db in
             try db.execute(sql: "PRAGMA journal_mode = WAL")

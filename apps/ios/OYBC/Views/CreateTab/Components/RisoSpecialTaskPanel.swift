@@ -69,6 +69,9 @@ struct RisoSpecialTaskPanel: View {
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
     @State private var form = CreateFormViewModel()
+    /// The host's database (the tutorial sandbox inside a lesson).
+    @Environment(\.appDatabase) private var database
+    @Environment(\.tutorialCoach) private var tutorialCoach
 
     /// The type chips offered — Achievement drops out in pool context.
     private var availableTypes: [SpecialType] {
@@ -105,6 +108,7 @@ struct RisoSpecialTaskPanel: View {
             }
         }
         .onAppear {
+            form.useDatabase(database)
             applyCountingSeed()
         }
     }
@@ -141,6 +145,7 @@ struct RisoSpecialTaskPanel: View {
     private var collapsedButton: some View {
         Button {
             isExpanded = true
+            tutorialCoach?.handle(.specialPanelOpened)
         } label: {
             HStack(spacing: 8) {
                 Text("＋")
@@ -165,6 +170,7 @@ struct RisoSpecialTaskPanel: View {
             )
         }
         .buttonStyle(.plain)
+        .tutorialAnchor(.specialTypeButton)
     }
 
     // MARK: - Expanded panel
@@ -291,6 +297,7 @@ struct RisoSpecialTaskPanel: View {
             fieldRow(label: "Verb", required: true) {
                 RisoTextField(placeholder: "Do", text: $countingActionText)
             }
+            .tutorialAnchor(.countingVerb)
 
             // Kind — a linked create shows the root's kind as a tag, never a picker.
             fieldRow(label: "Kind") {
@@ -300,6 +307,7 @@ struct RisoSpecialTaskPanel: View {
                     KindPickerView(selection: $countingKind, lock: .none)
                 }
             }
+            .tutorialAnchor(.countingKind)
 
             // Goal + Counting (side by side); Duration hides Counting
             HStack(alignment: .top, spacing: 10) {
@@ -317,6 +325,7 @@ struct RisoSpecialTaskPanel: View {
                     }
                 }
             }
+            .tutorialAnchor(.countingGoal)
 
             // Live title preview — "Title: {derived title}" (web parity).
             if !countingTitle.isEmpty {
@@ -346,6 +355,10 @@ struct RisoSpecialTaskPanel: View {
             }
             .opacity(canSubmitCounting ? 1 : 0.45)
             .allowsHitTesting(canSubmitCounting)
+            .tutorialAnchor(.addToLibrary)
+        }
+        .onChange(of: canSubmitCounting) { _, ready in
+            if ready { tutorialCoach?.handle(.countingFieldsFilled) }
         }
         .onChange(of: countingActionText) { _, _ in
             link.pairChanged(action: countingActionText, unit: countingUnitText, kind: countingKind, tasks: suggestionPool ?? taskLibrary)
@@ -421,7 +434,7 @@ struct RisoSpecialTaskPanel: View {
         countingUnitText = ""
         countingKind = .discrete
         link = CounterLinkState()
-        form = CreateFormViewModel()
+        form = CreateFormViewModel(database: database)
         collapse()
     }
 
@@ -615,7 +628,7 @@ struct RisoSpecialTaskPanel: View {
         achievementTitle = ""
         achievementBoardId = nil
         achievementTemplateId = nil
-        form = CreateFormViewModel()
+        form = CreateFormViewModel(database: database)
         collapse()
     }
 
@@ -625,10 +638,11 @@ struct RisoSpecialTaskPanel: View {
         guard !isLoadingAchievementData else { return }
         isLoadingAchievementData = true
         let uid = userId
+        let db = database
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let b = try AppDatabase.shared.fetchBoards(userId: uid)
-                let t = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                let b = try db.fetchBoards(userId: uid)
+                let t = try db.fetchRecurringBoardTemplates(userId: uid)
                 DispatchQueue.main.async {
                     self.boards = b.filter { !$0.isDeleted }
                     self.templates = t.filter { !$0.isDeleted && $0.isActive }
@@ -660,7 +674,7 @@ struct RisoSpecialTaskPanel: View {
         achievementTitle = ""
         achievementBoardId = nil
         achievementTemplateId = nil
-        form = CreateFormViewModel()
+        form = CreateFormViewModel(database: database)
     }
 
     @ViewBuilder

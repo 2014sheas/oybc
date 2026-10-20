@@ -58,9 +58,12 @@ struct RisoSourcePickerSheetView: View {
                     VStack(alignment: .leading, spacing: 7) {
                         if !matchingPools.isEmpty {
                             sectionKicker("POOLS")
-                            ForEach(matchingPools, id: \.id) { pool in
-                                poolRow(pool)
+                            VStack(alignment: .leading, spacing: 7) {
+                                ForEach(matchingPools, id: \.id) { pool in
+                                    poolRow(pool)
+                                }
                             }
+                            .tutorialAnchor(.sourcePoolRows)
                         }
                         if !matchingBoards.isEmpty {
                             sectionKicker("BOARDS")
@@ -78,6 +81,7 @@ struct RisoSourcePickerSheetView: View {
         .padding(.top, 10)
         .padding(.horizontal, 20)
         .background(Color.risoPaper.ignoresSafeArea())
+        .tutorialCoachLayer()
         .presentationDetents([.fraction(0.76)])
     }
 
@@ -96,6 +100,7 @@ struct RisoSourcePickerSheetView: View {
                 .foregroundStyle(Color.risoInk)
             Spacer()
             RisoButton(title: "Done", kind: .primary, small: true) { dismiss() }
+                .tutorialAnchor(.sourcesDone)
         }
     }
 

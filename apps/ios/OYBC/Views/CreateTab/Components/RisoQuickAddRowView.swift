@@ -110,6 +110,8 @@ struct RisoQuickAddRowView: View {
     /// The text a pick left in the field — the dropdown hides while it is unchanged.
     @State private var heldText: String? = nil
     @State private var form = CreateFormViewModel()
+    /// The host's database (the tutorial sandbox inside a lesson).
+    @Environment(\.appDatabase) private var database
     @FocusState private var focused: Bool
 
     private let placeholders = [
@@ -222,6 +224,11 @@ struct RisoQuickAddRowView: View {
     // MARK: - Body
 
     var body: some View {
+        quickAddContent
+            .onAppear { form.useDatabase(database) }
+    }
+
+    private var quickAddContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 // Text field — keyline, paper fill, Bricolage font
@@ -365,7 +372,7 @@ struct RisoQuickAddRowView: View {
 
         // Reset immediately — the model's async path handles DB work
         text = ""
-        form = CreateFormViewModel()
+        form = CreateFormViewModel(database: database)
         placeholderIndex += 1
         focused = true
     }

@@ -945,6 +945,16 @@ export const UserPreferencesSchema = z.object({
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
     .optional(),
+  // Getting Started tutorial progress (iOS tutorial board): optional for
+  // forward-compat; mergeUserPreferences drops malformed lesson entries.
+  // Deliberately loose here (the merge is the real validator) so one bad
+  // lesson entry never rejects the whole user document.
+  tutorialProgress: z
+    .object({
+      lessons: z.record(z.string(), z.unknown()).optional(),
+      cardDismissed: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const UserSchema = z.object({
