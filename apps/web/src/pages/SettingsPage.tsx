@@ -327,7 +327,7 @@ export function SettingsPage(): React.ReactElement {
               Discard guest data?
             </h2>
             <p className={profileStyles.confirmBody}>
-              This permanently erases every board, streak, and GREENLOG on this device. Guest data
+              This permanently erases every board, streak, and Greenlog on this device. Guest data
               isn’t backed up to an account, so this can’t be undone.
             </p>
             {discardError && <p className={profileStyles.nameError}>{discardError}</p>}

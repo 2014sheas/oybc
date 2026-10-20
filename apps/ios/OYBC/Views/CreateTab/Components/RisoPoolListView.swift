@@ -326,7 +326,7 @@ struct RisoPoolListView: View {
                 }
                 return parts.joined(separator: " · ")
             case .achievement:
-                return task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
+                return task.achievementTrigger == .bingo ? "First Bingo" : "Greenlog"
             }
         }()
 

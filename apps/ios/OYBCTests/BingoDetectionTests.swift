@@ -165,7 +165,7 @@ final class BingoDetectionTests: XCTestCase {
             totalCompleted: 25,
             totalSquares: 25
         )
-        XCTAssertEqual(BingoDetection.formatBingoMessage(result: result), "GREENLOG!")
+        XCTAssertEqual(BingoDetection.formatBingoMessage(result: result), "Greenlog!")
     }
 
     func testFormatMessageListsBingoLinesWhenNotGreenlog() {

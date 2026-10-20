@@ -500,7 +500,7 @@ struct RisoSpecialTaskPanel: View {
             VStack(alignment: .leading, spacing: 5) {
                 fieldLabel("Completes on")
                 HStack(spacing: 6) {
-                    ruleChip("GREENLOG", isOn: achievementTrigger == .greenlog) {
+                    ruleChip("Greenlog", isOn: achievementTrigger == .greenlog) {
                         achievementTrigger = .greenlog
                     }
                     ruleChip("First Bingo", isOn: achievementTrigger == .bingo) {

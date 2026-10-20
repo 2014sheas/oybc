@@ -42,7 +42,7 @@ describe('deriveFlashOutcome', () => {
 
   it('isGreenlog alone → greenlog message', () => {
     expect(deriveFlashOutcome({ ...base, isGreenlog: true })).toEqual({
-      text: 'GREENLOG! Board complete!',
+      text: 'Greenlog! Board complete!',
       kind: 'greenlog',
       newLineIds: [],
     });
@@ -86,7 +86,7 @@ describe('deriveFlashOutcome', () => {
         isGreenlog: true,
         newBingos: ['col_1'],
       }),
-    ).toEqual({ text: 'GREENLOG! Board complete!', kind: 'greenlog', newLineIds: ['col_1'] });
+    ).toEqual({ text: 'Greenlog! Board complete!', kind: 'greenlog', newLineIds: ['col_1'] });
   });
 });
 

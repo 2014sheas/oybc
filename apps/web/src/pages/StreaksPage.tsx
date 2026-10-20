@@ -289,9 +289,9 @@ export function StreaksPage(): React.ReactElement {
           </span>
           <span className={styles.statLabel}>Longest</span>
         </div>
-        <div className={styles.statCard} aria-label={`Total GREENLOGs: ${greenlogCount}`}>
+        <div className={styles.statCard} aria-label={`Total Greenlogs: ${greenlogCount}`}>
           <span className={styles.statValue}>{greenlogCount}</span>
-          <span className={styles.statLabel}>GREENLOGs</span>
+          <span className={styles.statLabel}>Greenlogs</span>
         </div>
       </div>
 

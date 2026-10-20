@@ -109,10 +109,10 @@ let tutorialLessons: [TutorialLesson] = [
     ),
     TutorialLesson(
         id: "share", pos: 8, systemImage: "square.and.arrow.up", tag: "Celebrate",
-        title: "Share a GREENLOG",
-        blurb: "Clear a whole board for a GREENLOG — the page goes loud — then share the poster with friends.",
-        steps: ["Fill every square", "Hit your GREENLOG", "Share the poster card"],
-        cta: "Preview a GREENLOG", target: .shareGreenlog
+        title: "Share a Greenlog",
+        blurb: "Clear a whole board for a Greenlog — the page goes loud — then share the poster with friends.",
+        steps: ["Fill every square", "Hit your Greenlog", "Share the poster card"],
+        cta: "Preview a Greenlog", target: .shareGreenlog
     ),
 ]
 

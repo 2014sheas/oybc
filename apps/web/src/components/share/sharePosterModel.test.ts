@@ -29,7 +29,7 @@ describe('share sheet model', () => {
   it('share text: bingo counts lines against the board size, greenlog keeps its copy', () => {
     expect(shareText('bingo', 'Week', 2, 5)).toBe('Bingo on Week! 2 of 12 lines.');
     expect(shareText('bingo', 'Week', 1, 3)).toBe('Bingo on Week! 1 of 8 lines.');
-    expect(shareText('greenlog', 'Week', 8, 3)).toBe('I crushed every square. GREENLOG on On Your Bingo Card!');
+    expect(shareText('greenlog', 'Week', 8, 3)).toBe('I crushed every square. Greenlog on On Your Bingo Card!');
   });
 
   it('the streak card shows only on a recurring timeframe with a streak above 1', () => {

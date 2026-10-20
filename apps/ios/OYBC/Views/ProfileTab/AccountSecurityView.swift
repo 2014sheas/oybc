@@ -373,7 +373,7 @@ struct AccountSecurityContent: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 14)
 
-                    Text("This erases every board, streak, and GREENLOG. It can't be undone.")
+                    Text("This erases every board, streak, and Greenlog. It can't be undone.")
                         .font(.risoBody(12, .regular))
                         .foregroundStyle(Color.risoMuted)
                         .multilineTextAlignment(.center)

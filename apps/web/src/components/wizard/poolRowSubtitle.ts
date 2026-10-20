@@ -39,7 +39,7 @@ export function buildPoolRowSubtitle(
       break;
     }
     case TaskType.ACHIEVEMENT: {
-      base = task.achievementTrigger === AchievementTrigger.BINGO ? 'First Bingo' : 'GREENLOG';
+      base = task.achievementTrigger === AchievementTrigger.BINGO ? 'First Bingo' : 'Greenlog';
       break;
     }
     default:

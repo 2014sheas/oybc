@@ -96,7 +96,7 @@ test.describe('Profile home — tiles', () => {
     await expect(streakTile).toContainText('2');
     await expect(streakTile).toContainText('day streak');
     await expect(streakTile).toContainText('Longest 1');
-    await expect(streakTile).toContainText('1 GREENLOGs');
+    await expect(streakTile).toContainText('1 Greenlogs');
 
     await streakTile.click();
     await expect(page).toHaveURL(/\/profile\/streaks/);

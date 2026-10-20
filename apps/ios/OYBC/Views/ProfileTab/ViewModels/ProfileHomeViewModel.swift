@@ -83,10 +83,10 @@ final class ProfileHomeViewModel: ObservableObject {
 
             // Streak tile: headline number is the daily BINGO streak (design
             // handoff §Interactions: "Streak tile number: Daily timeframe,
-            // bingo streak"); Longest + GREENLOGs reuse the exact stats
+            // bingo streak"); Longest + Greenlogs reuse the exact stats
             // StreaksView's hero already computes (daily greenlog longest-run
             // + all-time completed-board count) so the two surfaces never
-            // disagree about what "Longest"/"GREENLOGs" means.
+            // disagree about what "Longest"/"Greenlogs" means.
             let bingoStreak = computeStreak(
                 timeframe: .daily, criterion: .bingo,
                 boards: boards, weekStartDay: weekStartDay, now: now

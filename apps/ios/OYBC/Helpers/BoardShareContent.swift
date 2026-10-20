@@ -36,7 +36,7 @@ struct BoardShareContent: Equatable {
         case .bingo:
             return "Bingo on \(boardName)! \(linesCompleted) of \(BingoDetection.totalLineCount(gridSize: boardSize)) lines."
         case .greenlog:
-            return "I crushed every square. GREENLOG on On Your Bingo Card!"
+            return "I crushed every square. Greenlog on On Your Bingo Card!"
         }
     }
 
