@@ -60,7 +60,7 @@ final class BoardMomentTests: XCTestCase {
         let out = BoardFlashOutcome.resolve(wasReactivated: false, lost: [], gained: ["row_2", "diag_main"], didGreenlog: true)
         XCTAssertEqual(out.moment?.kind, .greenlog)
         XCTAssertEqual(out.moment?.newLineIds, ["diag_main", "row_2"])
-        XCTAssertEqual(out.message, "GREENLOG!")
+        XCTAssertEqual(out.message, "Greenlog!")
     }
 
     func test_flash_lostBingoAndReactivationOutrankAndCarryNoMoment() {

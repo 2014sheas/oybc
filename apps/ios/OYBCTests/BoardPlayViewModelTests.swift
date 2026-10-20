@@ -928,7 +928,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         }, "completion never landed in the published task map")
         XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).status, .completed,
                        "the single square completing should auto-complete the 1x1 board")
-        XCTAssertEqual(vm.flashEvent?.risoNotification, "GREENLOG!",
+        XCTAssertEqual(vm.flashEvent?.risoNotification, "Greenlog!",
                        "the real completion transition should fire the celebration")
         let firstFlashId = try XCTUnwrap(vm.flashEvent?.id)
 

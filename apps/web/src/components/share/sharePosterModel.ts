@@ -36,7 +36,7 @@ export function shareTitle(boardName: string, kind: ShareKind): string {
 export function shareText(kind: ShareKind, boardName: string, linesCompleted: number, boardSize: number): string {
   return kind === 'bingo'
     ? `Bingo on ${boardName}! ${linesCompleted} of ${totalLineCount(boardSize as BoardSize)} lines.`
-    : 'I crushed every square. GREENLOG on On Your Bingo Card!';
+    : 'I crushed every square. Greenlog on On Your Bingo Card!';
 }
 
 /**

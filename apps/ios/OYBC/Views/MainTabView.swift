@@ -32,7 +32,7 @@ struct MainTabView: View {
     /// Profile-tab stack, bound so tutorial deep-links can push sub-pages
     /// (Recurring templates / Default pools) directly.
     @State private var profilePath: NavigationPath = NavigationPath()
-    /// Tutorial completion celebration + the "Preview a GREENLOG" sample.
+    /// Tutorial completion celebration + the "Preview a Greenlog" sample.
     @State private var showTutorialGreenlog = false
     @State private var showGreenlogPreview = false
     /// Phase 6.1: when the user taps Create on the Boards-tab Recurring
@@ -192,7 +192,7 @@ struct MainTabView: View {
                 .zIndex(30)
             }
 
-            // ── "Preview a GREENLOG" sample (tutorial Share lesson) ──
+            // ── "Preview a Greenlog" sample (tutorial Share lesson) ──
             if showGreenlogPreview {
                 let sample = MomentPresentation.greenlogSample
                 RisoMomentOverlay(

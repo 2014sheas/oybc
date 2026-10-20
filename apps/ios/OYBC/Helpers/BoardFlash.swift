@@ -45,7 +45,7 @@ struct BoardFlashOutcome: Equatable {
             return BoardFlashOutcome(message: "Bingo lost: \(lost.joined(separator: ", "))", moment: nil)
         }
         if didGreenlog {
-            return BoardFlashOutcome(message: "GREENLOG!", moment: MomentTrigger(kind: .greenlog, newLineIds: gained))
+            return BoardFlashOutcome(message: "Greenlog!", moment: MomentTrigger(kind: .greenlog, newLineIds: gained))
         }
         if !gained.isEmpty {
             return BoardFlashOutcome(

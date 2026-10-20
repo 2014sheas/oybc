@@ -135,7 +135,7 @@ struct RisoTaskRowView: View {
             return "\(n) sub-task\(n == 1 ? "" : "s") · \(ruleLabel)"
         case .achievement:
             let trigger = task.achievementTrigger ?? .greenlog
-            return trigger == .bingo ? "First Bingo" : "GREENLOG"
+            return trigger == .bingo ? "First Bingo" : "Greenlog"
         case .normal:
             return nil
         }

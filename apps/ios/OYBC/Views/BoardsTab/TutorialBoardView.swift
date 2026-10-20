@@ -38,7 +38,7 @@ struct TutorialBoardView: View {
                 header
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("This board *is* the tutorial. Tap a square to learn the move, try it for real, and check it off. Clear all eight for your first GREENLOG.")
+                        Text("This board *is* the tutorial. Tap a square to learn the move, try it for real, and check it off. Clear all eight for your first Greenlog.")
                             .font(.risoBody(14, .semibold))
                             .foregroundStyle(Color.risoMuted)
                             .fixedSize(horizontal: false, vertical: true)

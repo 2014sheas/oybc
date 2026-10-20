@@ -436,7 +436,7 @@ function DeleteAccountSheet({
   return (
     <Sheet title="Delete your account?" onClose={onClose} busy={busy}>
       <p className={styles.sheetBody}>
-        This permanently erases every board, streak, and GREENLOG across all your devices. It
+        This permanently erases every board, streak, and Greenlog across all your devices. It
         can’t be undone.
       </p>
       {providers.hasPassword ? (
