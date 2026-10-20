@@ -7,7 +7,12 @@ options:
   createIntermediateGroups: true
 
 settings:
-  MARKETING_VERSION: "1.0.0"
+  # Marketing version stays "1.0" — the version TestFlight has been reporting
+  # (the Info.plist literal used to win over the "1.0.0" that lived here).
+  # Info.plist now reads $(MARKETING_VERSION) / $(CURRENT_PROJECT_VERSION)
+  # (see `info.properties` below); ci_scripts/ci_post_clone.sh stamps
+  # CURRENT_PROJECT_VERSION from the Xcode Cloud build number.
+  MARKETING_VERSION: "1.0"
   CURRENT_PROJECT_VERSION: "1"
   IPHONEOS_DEPLOYMENT_TARGET: "17.0"
   SWIFT_VERSION: "5.9"
@@ -89,6 +94,11 @@ targets:
         # key pre-answers the App Store Connect export-compliance question so
         # every upload skips the questionnaire.
         ITSAppUsesNonExemptEncryption: false
+        # XcodeGen's generated Info.plist defaults both of these to the
+        # literals "1.0" / "1", which would shadow MARKETING_VERSION and the
+        # CI-stamped CURRENT_PROJECT_VERSION. Point them at the build settings.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UIAppFonts:
           - BricolageGrotesque-Bold.ttf
           - BricolageGrotesque-ExtraBold.ttf
@@ -112,13 +122,16 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # iPhone-only, portrait-only (App Review blocker L1): no iPad layout
+        # exists and no surface is designed for landscape. With the device
+        # family restricted to iPhone, the iPad orientation key is meaningless
+        # and has been dropped.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         PRODUCT_NAME: "$(TARGET_NAME)"
         PRODUCT_BUNDLE_IDENTIFIER: "com.oybc.OYBC"
         SWIFT_EMIT_LOC_STRINGS: YES
         SWIFT_VERSION: "5.9"
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         ENABLE_PREVIEWS: YES
         DEVELOPMENT_ASSET_PATHS: ""
         CODE_SIGN_STYLE: Automatic

@@ -11,14 +11,14 @@ import Photos
 /// The poster is the raster target: a 9:16 `ShareStoryPoster` (236 x 420 pt,
 /// static colours) showing the board's real end-state cells from
 /// `momentPosterCells`, with a "Show task names" toggle (default on) and an
-/// always-on stats row. Documented divergence from web: a "Copy link" row and
-/// four icon targets (Messages / Stories / Save image / More) instead of web's
-/// Share + Save image buttons.
+/// always-on stats row. Documented divergence from web: four icon targets
+/// (Messages / Stories / Save image / More) instead of web's Share + Save image
+/// buttons. There is no "Copy link" row: boards have no shareable URL (no route
+/// or associated domain), so a link row would copy a dead address.
 ///
 /// - Parameters:
 ///   - content: The moment kind plus the board's numbers and streak.
 ///   - cells: The poster's cells in their end state (`momentPosterCells`).
-///   - boardId: Used for the copy-link slug.
 ///   - onDismiss: Called when the user taps Done or dismisses the sheet.
 struct ShareBoardSheet: View {
 
@@ -26,18 +26,16 @@ struct ShareBoardSheet: View {
 
     let content: BoardShareContent
     let cells: [PosterCell]
-    let boardId: String
     var onDismiss: (() -> Void)? = nil
 
     /// - Parameter initialShowTaskNames: Initial "Show task names" value (snapshot seam).
     init(
-        content: BoardShareContent, cells: [PosterCell], boardId: String,
+        content: BoardShareContent, cells: [PosterCell],
         onDismiss: (() -> Void)? = nil,
         initialShowTaskNames: Bool = BoardShareContent.showTaskNamesDefault
     ) {
         self.content = content
         self.cells = cells
-        self.boardId = boardId
         self.onDismiss = onDismiss
         _showTaskNames = State(initialValue: initialShowTaskNames)
     }
@@ -45,7 +43,6 @@ struct ShareBoardSheet: View {
     // MARK: - State
 
     @State private var showTaskNames: Bool
-    @State private var linkCopied: Bool = false
     @State private var shareItem: ShareActivityItem? = nil
     /// Transient feedback for the "Save image" action (success or failure).
     @State private var saveToast: String? = nil
@@ -108,15 +105,10 @@ struct ShareBoardSheet: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
 
-                    // ── Copy link row ──
-                    copyLinkRow
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-
                     // ── Share target buttons ──
                     targetsRow
                         .padding(.horizontal, 16)
-                        .padding(.top, 13)
+                        .padding(.top, 14)
                         .padding(.bottom, 28)
                 }
             }
@@ -183,66 +175,6 @@ struct ShareBoardSheet: View {
         .accessibilityValue(showTaskNames ? "On" : "Off")
     }
 
-    // MARK: - Copy link row
-
-    @ViewBuilder
-    private var copyLinkRow: some View {
-        Button {
-            UIPasteboard.general.string = "oybc.app/b/\(shortBoardId)"
-            withAnimation(.easeOut(duration: 0.16)) {
-                linkCopied = true
-            }
-            // Auto-reset after 2.5s
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                withAnimation(.easeOut(duration: 0.16)) {
-                    linkCopied = false
-                }
-            }
-        } label: {
-            HStack(spacing: 11) {
-                // Icon square
-                Image(systemName: linkCopied ? "checkmark" : "link")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(linkCopied ? Color.risoInk : Color.risoPaper)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(linkCopied ? Color.risoPaper : Color.risoBlue)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-                    )
-
-                // Text
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(linkCopied ? "Link copied" : "Copy link")
-                        .font(.risoHead(14, .extraBold))
-                        .foregroundStyle(Color.risoInk)
-                    Text("oybc.app/b/\(shortBoardId)")
-                        .font(.risoBody(11.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .fill(linkCopied ? Color.risoGreen : Color.risoPaper2)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-            )
-        }
-        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.button))
-    }
-
     // MARK: - Share targets row
 
     @ViewBuilder
@@ -292,11 +224,6 @@ struct ShareBoardSheet: View {
 
     // MARK: - Helpers
 
-    /// Short board id slug used in the link row (first 8 chars of the UUID).
-    private var shortBoardId: String {
-        String(boardId.prefix(8)).lowercased()
-    }
-
     /// Renders the poster to a `UIImage` via `ImageRenderer` at 2x
     /// (472 x 840 px), forced to the light palette.
     ///
@@ -329,11 +256,18 @@ struct ShareBoardSheet: View {
     /// Uses `PHPhotoLibrary.performChanges` (not the fire-and-forget
     /// `UIImageWriteToSavedPhotosAlbum`) so a denied permission or write
     /// failure surfaces to the user via `saveToast` instead of silently
-    /// doing nothing.
+    /// doing nothing. Asks for add-only access first: the app declares only
+    /// `NSPhotoLibraryAddUsageDescription`, so the prompt must never be the
+    /// read-write one an implicit `performChanges` authorization could raise.
     private func saveImageToPhotos() {
         _Concurrency.Task { @MainActor in
             guard let image = renderPosterImage() else {
                 showSaveToast("Couldn't render the image.")
+                return
+            }
+            let access = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard access == .authorized || access == .limited else {
+                showSaveToast("Couldn't save — check Photos access in Settings.")
                 return
             }
             do {
@@ -347,7 +281,7 @@ struct ShareBoardSheet: View {
         }
     }
 
-    /// Shows a transient toast for ~2.5s (mirrors the copy-link reset cadence).
+    /// Shows a transient toast for ~2.5s.
     @MainActor
     private func showSaveToast(_ message: String) {
         withAnimation(.easeOut(duration: 0.16)) { saveToast = message }
@@ -481,8 +415,7 @@ private struct ShareActivityItem: Identifiable {
                     replay: replay,
                     cells: (0..<9).map { PosterCellInput(idx: $0, label: "Task \($0)", type: .normal, isFree: false) },
                     kind: .bingo
-                ),
-                boardId: "board-abc-123-def"
+                )
             )
             .presentationDetents([.medium, .large])
         }
