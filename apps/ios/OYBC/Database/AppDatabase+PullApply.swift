@@ -357,13 +357,36 @@ extension AppDatabase {
             return (true, "Pulled users/\(userId) (new)")
         }
         let remoteV = toInt(remoteData["version"]), localV = toInt(local["version"])
+        // Tutorial progress is unioned across both sides so whole-document LWW can
+        // never regress a finished lesson (twin of web's `unionTutorialProgress`).
+        let localProgress = TutorialProgress.fromPreferences(local["preferences"])
+        let remoteProgress = TutorialProgress.fromPreferences(remoteData["preferences"])
+        let unioned: TutorialProgress? = (localProgress != nil || remoteProgress != nil)
+            ? TutorialProgress.union(local: localProgress ?? .empty, incoming: remoteProgress ?? .empty) : nil
         if resolveConflict(local: local, remote: remoteData) == "remote" {
             var merged = remoteData
+            if let unioned, let prefs = TutorialProgress.replacing(in: remoteData["preferences"], with: unioned) {
+                merged["preferences"] = prefs
+            }
             if let watermark = local["lastSyncedAt"] { merged["lastSyncedAt"] = watermark }
             try upsertPulledRecord(db: db, grdbTable: "users", data: merged)
             return (true, "Pulled users/\(userId) (remote v\(remoteV) > local v\(localV))")
         }
-        try reassertPullLocalWin(db: db, entityType: "users", entityId: userId, localData: local, remoteData: remoteData, ownerUid: userId)
+        var localData = local
+        if let unioned, unioned != (localProgress ?? .empty),
+           let prefs = TutorialProgress.replacing(in: local["preferences"], with: unioned),
+           let data = try? JSONSerialization.data(withJSONObject: prefs, options: [.sortedKeys]),
+           let text = String(data: data, encoding: .utf8) {
+            // The remote knew a lesson further along: fold it into the winning
+            // local row (version bump so it wins the push) before re-asserting.
+            let now = currentTimestamp()
+            try db.execute(
+                sql: "UPDATE users SET preferences = ?, version = version + 1, updatedAt = ? WHERE id = ?",
+                arguments: [text, now, userId]
+            )
+            localData = try fetchPullLocalRecord(db: db, grdbTable: "users", id: userId) ?? local
+        }
+        try reassertPullLocalWin(db: db, entityType: "users", entityId: userId, localData: localData, remoteData: remoteData, ownerUid: userId)
         return (false, "Kept local users/\(userId) (local v\(localV) >= remote v\(remoteV))")
     }
 

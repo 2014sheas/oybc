@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// SettingsView — Profile reorg PR1. Pushed from the gear button on
-/// `ProfileView` (or a tutorial deep-link, `TutorialDeepLink.settings`).
+/// `ProfileView` (or the tutorial board's Settings hop).
 ///
 /// Houses everything that used to live directly on Profile but is touched
 /// rarely: Theme, Notifications, Account & security, Help & getting
@@ -15,7 +15,7 @@ import SwiftUI
 /// #2). Sync keeps running silently in the background.
 struct SettingsView: View {
     @EnvironmentObject var authService: AuthService
-    @EnvironmentObject var tutorialStore: TutorialProgressStore
+    @EnvironmentObject var tutorial: TutorialCoordinator
 
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Threaded down to `HelpView`. Optional so #Preview / tests can mount
@@ -93,7 +93,7 @@ struct SettingsView: View {
                             UserDefaults.hasSeenOnboarding = false
                         }
                         SwiftUI.Button("Reset tutorial progress") {
-                            tutorialStore.reset()
+                            tutorial.reset()
                         }
                     }
                     .font(.risoBody(12, .semibold))
@@ -462,6 +462,6 @@ struct SettingsView: View {
     return NavigationStack {
         SettingsView()
             .environmentObject(authService)
-            .environmentObject(TutorialProgressStore())
+            .environmentObject(TutorialCoordinator.preview())
     }
 }

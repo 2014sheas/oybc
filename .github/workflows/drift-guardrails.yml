@@ -50,6 +50,11 @@ jobs:
           node scripts/audit/check-count-formatting.mjs --self-test
           node scripts/audit/check-count-formatting.mjs
 
+      - name: Tutorial sandbox reach
+        # Getting Started lessons 2-3 run the real screens on a throwaway
+        # AppDatabase; no lesson-path file may name AppDatabase.shared.
+        run: node scripts/audit/check-tutorial-sandbox-reach.mjs
+
       - name: Sync-contract ↔ firestore.rules consistency
         # SYNC_COLLECTIONS / USER_SCOPED_SYNC_COLLECTIONS (packages/shared) must
         # match isKnownCollection() / requiresUserIdField() in firestore.rules.

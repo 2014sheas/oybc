@@ -112,6 +112,8 @@ struct RisoCompoundFieldsView: View {
 
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
+    /// The host's database (the tutorial sandbox inside a lesson).
+    @Environment(\.appDatabase) private var database
 
     /// Counter Detail's "+ New" preset: the create counts toward this counter.
     var presetCountsTowardCounterId: String? = nil
@@ -305,6 +307,11 @@ struct RisoCompoundFieldsView: View {
     // MARK: - Body
 
     var body: some View {
+        compoundContent
+            .onAppear { form.useDatabase(database) }
+    }
+
+    private var compoundContent: some View {
         VStack(alignment: .leading, spacing: 9) {
 
             // Title field

@@ -90,6 +90,10 @@ struct UserPreferences: Codable, Equatable {
     /// Daily play reminder time of day, 24h "HH:mm" (local). Default "20:00".
     var dailyPlayReminderTime: String
 
+    /// Getting Started tutorial progress (iOS tutorial board) — synced with the
+    /// account; web only round-trips it. See `TutorialProgress`.
+    var tutorialProgress: TutorialProgress
+
     static let defaults = UserPreferences(
         weekStartDay: .monday,
         defaultBoardSize: .five,
@@ -110,7 +114,8 @@ struct UserPreferences: Codable, Equatable {
         notificationsEnabled: false,
         recurringWindowReminders: true,
         dailyPlayReminderEnabled: false,
-        dailyPlayReminderTime: "20:00"
+        dailyPlayReminderTime: "20:00",
+        tutorialProgress: .empty
     )
 
     /// Returns a complete preferences object by filling missing fields from
@@ -163,6 +168,8 @@ struct UserPreferences: Codable, Equatable {
         self.dailyPlayReminderTime = UserPreferences.isValidReminderTime(decodedTime)
             ? decodedTime
             : Self.defaults.dailyPlayReminderTime
+        self.tutorialProgress = (try? c.decode(TutorialProgress.self, forKey: .tutorialProgress))
+            ?? Self.defaults.tutorialProgress
     }
 
     /// Validates a 24-hour "HH:mm" time-of-day string (00:00–23:59). Mirrors
@@ -194,7 +201,8 @@ struct UserPreferences: Codable, Equatable {
         notificationsEnabled: Bool = false,
         recurringWindowReminders: Bool = true,
         dailyPlayReminderEnabled: Bool = false,
-        dailyPlayReminderTime: String = "20:00"
+        dailyPlayReminderTime: String = "20:00",
+        tutorialProgress: TutorialProgress = .empty
     ) {
         self.weekStartDay = weekStartDay
         self.defaultBoardSize = defaultBoardSize
@@ -211,6 +219,7 @@ struct UserPreferences: Codable, Equatable {
         self.recurringWindowReminders = recurringWindowReminders
         self.dailyPlayReminderEnabled = dailyPlayReminderEnabled
         self.dailyPlayReminderTime = dailyPlayReminderTime
+        self.tutorialProgress = tutorialProgress
     }
 }
 

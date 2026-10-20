@@ -91,6 +91,7 @@ struct BoardActionsPresenter: ViewModifier {
     /// afterward (a closed board's expiry reminder should stop firing; a
     /// reopened one shouldn't re-add one either, since it's past `endDate`).
     @EnvironmentObject var notificationService: NotificationService
+    @Environment(\.tutorialSignals) private var tutorialSignals
     /// Fired after a successful Board details or Repeat save (drives the
     /// "Board saved" toast — the same one the squares editor's Save uses;
     /// web's `BoardTitleActions` fires its toast for both too).
@@ -346,7 +347,8 @@ struct BoardActionsPresenter: ViewModifier {
     /// a reopened board is already past its `endDate` so the planner emits
     /// none either way) — reconcile so the OS-scheduled set stays honest.
     private func reconcileNotifications() async {
-        guard let uid = userId.isEmpty ? nil : userId else { return }
+        // A tutorial sandbox board must never touch the real OS notification set.
+        guard !tutorialSignals.sandboxed, let uid = userId.isEmpty ? nil : userId else { return }
         await notificationService.reconcile(userId: uid)
     }
 }

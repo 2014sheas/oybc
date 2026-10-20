@@ -201,7 +201,10 @@ struct BoardWizardTasksStepView: View {
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
     // Board Sources P2 — "Add from a pool or board" sheet.
-    @State private var showSourceSheet = false
+    @State var showSourceSheet = false
+    @Environment(\.tutorialSignals) private var tutorialSignals
+    @Environment(\.tutorialCoach) var tutorialCoach
+    @Environment(\.appDatabase) private var appDatabase
 
     /// The pulled source a ✕ (or a sheet un-toggle) asked to remove while it
     /// still carried configuration — the remove-confirm's subject (owner
@@ -262,7 +265,7 @@ struct BoardWizardTasksStepView: View {
         return combined
     }
 
-    private var isCountSatisfied: Bool { capacity >= tasksRequired }
+    var isCountSatisfied: Bool { capacity >= tasksRequired }
 
     /// Counter-family exclusivity (2026-09-08) — collisions visible in
     /// the wizard pool, for the "shares a counter with 'X' · one per
@@ -458,6 +461,7 @@ struct BoardWizardTasksStepView: View {
                         onLibraryReloadRequested: onLibraryReloadRequested
                     )
                 }
+                .tutorialDimmed(tutorialSignals.sandboxed)
 
                 // 3. Add from a pool or board (Board Sources P2, frame 2a) —
                 // dashed row styled like the library row; opens the sheet.
@@ -506,6 +510,7 @@ struct BoardWizardTasksStepView: View {
                         AnyView(
                             RisoPoolRowEditorView(
                                 task: task,
+                                database: appDatabase,
                                 draft: $editDraft,
                                 libraryTasks: pickerLibraryTasks,
                                 counterRootTasks: Array(effectiveTaskById.values),
@@ -558,6 +563,7 @@ struct BoardWizardTasksStepView: View {
         // request here means the dialog goes up only once the sheet is
         // genuinely gone — no timer, no animation race.
         .sheet(isPresented: $showSourceSheet, onDismiss: {
+            tutorialSourceSheetClosed()
             if let queued = sourceRemovalAfterSheetDismiss {
                 sourceRemovalAfterSheetDismiss = nil
                 pendingSourceRemoval = queued
@@ -712,42 +718,6 @@ struct BoardWizardTasksStepView: View {
                 seededTargetByTaskId: seededTargets(for: source)
             )
         ) ?? ""
-    }
-
-    /// Dashed "Add from a pool or board" entry row — styled like the library
-    /// entry row (2pt dashed keyline, grid icon, trailing count badge =
-    /// pools + active boards).
-    private var sourceSheetEntry: some View {
-        Button {
-            showSourceSheet = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "square.grid.3x3")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color.risoMuted)
-                Text("Add from a pool or board")
-                    .font(.risoHead(13, .bold))
-                    .foregroundStyle(Color.risoInk)
-                Spacer()
-                Text("\(pools.count + sheetBoardEntries.count)")
-                    .font(.risoBody(11, .extraBold))
-                    .foregroundStyle(Color.risoPaper)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.risoInk))
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(
-                        Color.risoInk.opacity(0.5),
-                        style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [5, 4])
-                    )
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Add from a pool or board")
     }
 
     /// The source rows rendered at the top of the "On your board" list.
@@ -962,6 +932,7 @@ struct BoardWizardTasksStepView: View {
             RisoButton(title: "Next ›", kind: isRecurring ? .blue : .primary, fullWidth: true) {
                 onNext()
             }
+            .tutorialAnchor(.wizardNext)
             // Real disabled state (not just .allowsHitTesting) so VoiceOver
             // reports + blocks it; dim cue retained.
             .opacity(canAdvance ? 1 : 0.45)

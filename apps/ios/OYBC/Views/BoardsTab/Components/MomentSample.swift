@@ -30,3 +30,18 @@ extension MomentPresentation {
         return MomentPresentation(kind: .greenlog, replay: replay, cells: cells)
     }
 }
+
+extension MomentPresentation {
+
+    /// The tutorial Greenlog (all nine lessons done): the nine lesson titles as
+    /// normal cells on a 3×3 with no free square, landing row-major.
+    static var tutorialGreenlog: MomentPresentation {
+        let titles = TutorialCatalog.titles
+        let replay = BoardMomentReplay(
+            order: titles.indices.map { MomentOrderEntry(boardTaskId: "tutorial-\($0)", idx: $0, completedAt: nil) },
+            freeIdx: nil, lineClosureBeat: [:], completedTasks: 9, totalTasks: 9, size: 3
+        )
+        let cells = titles.enumerated().map { MomentCellInput(idx: $0.offset, title: $0.element, endCompleted: true) }
+        return MomentPresentation(kind: .greenlog, replay: replay, cells: cells)
+    }
+}

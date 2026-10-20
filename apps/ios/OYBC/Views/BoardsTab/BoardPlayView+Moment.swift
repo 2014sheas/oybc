@@ -39,10 +39,12 @@ extension BoardPlayView {
                 onShare: { showShareBoardSheet = true },
                 onBack: {
                     withAnimation(.easeOut(duration: 0.25)) { moment = nil }
+                    tutorialCoach?.handle(m.kind == .bingo ? .bingoMomentClosed : .greenlogMomentClosed)
                 },
                 onNewBoard: {
                     withAnimation(.easeOut(duration: 0.25)) { moment = nil }
-                    MomentIntent.startNewBoard()
+                    // In a tutorial lesson "Start a new board" closes the lesson instead.
+                    if let tutorialCoach { tutorialCoach.handle(.greenlogMomentClosed) } else { MomentIntent.startNewBoard() }
                 }
             )
             // The field bleeds edge to edge on its own (`field.ignoresSafeArea()`
@@ -74,6 +76,7 @@ extension BoardPlayView {
                 boardId: b.id,
                 onDismiss: { showShareBoardSheet = false }
             )
+            .tutorialExitGuard()
             .presentationDetents([.medium, .large])
         }
     }
@@ -104,6 +107,7 @@ extension BoardPlayView {
         refreshStreaks()
         let presentation = MomentPresentation(kind: kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay))
         withAnimation(.easeIn(duration: 0.3)) { moment = presentation }
+        tutorialCoach?.setMomentOpen(true)
     }
 
     private func pollMoment(chain: UUID) {
@@ -125,6 +129,7 @@ extension BoardPlayView {
                 kind: p.trigger.kind, replay: replay, cells: viewModel.momentCellInputs(replay: replay)
             )
             withAnimation(.easeIn(duration: 0.3)) { moment = presentation }
+            tutorialCoach?.setMomentOpen(true)
         }
     }
 }

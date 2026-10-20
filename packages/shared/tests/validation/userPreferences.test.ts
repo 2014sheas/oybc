@@ -5,6 +5,8 @@ import {
 import {
   DEFAULT_USER_PREFERENCES,
   mergeUserPreferences,
+  unionTutorialProgress,
+  type TutorialProgress,
 } from '../../src/types/user';
 import { CenterSquareType, Timeframe } from '../../src/constants/enums';
 
@@ -77,6 +79,8 @@ describe('UserPreferencesSchema', () => {
       'recurringWindowReminders',
       'dailyPlayReminderEnabled',
       'dailyPlayReminderTime',
+      // Tutorial progress — optional for forward-compat too.
+      'tutorialProgress',
     ]);
     const keys = (Object.keys(DEFAULT_USER_PREFERENCES) as (keyof typeof DEFAULT_USER_PREFERENCES)[])
       .filter((k) => !optionalKeys.has(k));
@@ -102,6 +106,7 @@ describe('UserPreferencesSchema', () => {
     'recurringWindowReminders',
     'dailyPlayReminderEnabled',
     'dailyPlayReminderTime',
+    'tutorialProgress',
   ] as const)('treats %s as optional (forward-compat for older peers)', (key) => {
     const partial = { ...DEFAULT_USER_PREFERENCES };
     delete (partial as Record<string, unknown>)[key];
@@ -184,6 +189,7 @@ describe('mergeUserPreferences', () => {
       recurringWindowReminders: false,
       dailyPlayReminderEnabled: true,
       dailyPlayReminderTime: '07:30',
+      tutorialProgress: { lessons: { createTask: { status: 'done' as const } }, cardDismissed: true },
     };
     expect(mergeUserPreferences(full)).toEqual(full);
   });
@@ -334,5 +340,97 @@ describe('mergeUserPreferences', () => {
   it('returns a fresh object (not the defaults reference)', () => {
     const merged = mergeUserPreferences(undefined);
     expect(merged).not.toBe(DEFAULT_USER_PREFERENCES);
+  });
+});
+
+describe('tutorialProgress preference', () => {
+  it('defaults to no lessons and an undismissed card', () => {
+    expect(mergeUserPreferences(null).tutorialProgress).toEqual({ lessons: {}, cardDismissed: false });
+    expect(mergeUserPreferences({}).tutorialProgress).toEqual({ lessons: {}, cardDismissed: false });
+  });
+
+  it('round-trips done and inProgress lessons (including unknown ids) verbatim', () => {
+    const tutorialProgress = {
+      lessons: {
+        createTask: { status: 'done' as const },
+        createBoard: { status: 'inProgress' as const, step: 3 },
+        someFutureLesson: { status: 'done' as const },
+      },
+      cardDismissed: true,
+    };
+    const merged = mergeUserPreferences({ ...DEFAULT_USER_PREFERENCES, tutorialProgress });
+    expect(merged.tutorialProgress).toEqual(tutorialProgress);
+    const parsed = UserPreferencesSchema.parse({ ...DEFAULT_USER_PREFERENCES, tutorialProgress });
+    expect(mergeUserPreferences(parsed).tutorialProgress).toEqual(tutorialProgress);
+  });
+
+  it('drops malformed lesson entries without rejecting the document', () => {
+    const merged = mergeUserPreferences({
+      tutorialProgress: {
+        lessons: {
+          a: { status: 'inProgress', step: -1 },
+          b: { status: 'inProgress', step: 1.5 },
+          c: { status: 'inProgress' },
+          d: { status: 'weird', extra: 1 },
+          e: 'done',
+          f: { status: 'done' },
+        },
+        cardDismissed: 'yes',
+      },
+    } as never);
+    // A status a newer client wrote is kept opaque; malformed KNOWN entries drop.
+    expect(merged.tutorialProgress).toEqual({
+      lessons: { d: { status: 'weird', extra: 1 }, f: { status: 'done' } },
+      cardDismissed: false,
+    });
+  });
+
+  it('falls back to the default for a non-object container', () => {
+    expect(mergeUserPreferences({ tutorialProgress: 'x' } as never).tutorialProgress).toEqual({
+      lessons: {},
+      cardDismissed: false,
+    });
+  });
+});
+
+describe('unionTutorialProgress', () => {
+  const p = (lessons: TutorialProgress['lessons'], cardDismissed = false): TutorialProgress => ({ lessons, cardDismissed });
+
+  it('done beats inProgress and a higher step beats a lower one, in both directions', () => {
+    const a = p({ x: { status: 'done' }, y: { status: 'inProgress', step: 2 }, z: { status: 'inProgress', step: 5 } });
+    const b = p({ x: { status: 'inProgress', step: 4 }, y: { status: 'inProgress', step: 6 }, z: { status: 'inProgress', step: 1 } });
+    const expected = { x: { status: 'done' }, y: { status: 'inProgress', step: 6 }, z: { status: 'inProgress', step: 5 } };
+    expect(unionTutorialProgress(a, b).lessons).toEqual(expected);
+    expect(unionTutorialProgress(b, a).lessons).toEqual(expected);
+  });
+
+  it('keeps lessons only one side has, ORs cardDismissed and never mutates inputs', () => {
+    const a = p({ only: { status: 'done' } });
+    const b = p({ other: { status: 'inProgress', step: 1 } }, true);
+    const merged = unionTutorialProgress(a, b);
+    expect(Object.keys(merged.lessons).sort()).toEqual(['only', 'other']);
+    expect(merged.cardDismissed).toBe(true);
+    expect(a.cardDismissed).toBe(false);
+  });
+
+  it('an unrecognised entry loses to a known one but survives alone', () => {
+    const unknown = { status: 'paused', note: 'x' };
+    expect(unionTutorialProgress(p({ x: unknown }), p({ x: { status: 'inProgress', step: 0 } })).lessons.x)
+      .toEqual({ status: 'inProgress', step: 0 });
+    expect(unionTutorialProgress(p({ x: unknown }), p({})).lessons.x).toEqual(unknown);
+  });
+
+  it('handles missing inputs', () => {
+    expect(unionTutorialProgress(undefined, undefined)).toEqual({ lessons: {}, cardDismissed: false });
+  });
+});
+
+describe('DEFAULT_USER_PREFERENCES nested defaults', () => {
+  it('every spread gets its own tutorialProgress object', () => {
+    const a = { ...DEFAULT_USER_PREFERENCES };
+    const b = { ...DEFAULT_USER_PREFERENCES };
+    a.tutorialProgress.lessons['x'] = { status: 'done' };
+    expect(b.tutorialProgress.lessons).toEqual({});
+    expect(DEFAULT_USER_PREFERENCES.tutorialProgress.lessons).toEqual({});
   });
 });

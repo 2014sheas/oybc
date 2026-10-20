@@ -6,7 +6,7 @@ import GRDB
 /// `path` is a `NavigationPath`, so mixed value types coexist happily: a bare
 /// `String` still means "open `TaskDetailView` for this task id", and this
 /// enum carries the destinations that need their own view. Precedent:
-/// `ProfileRoute` in `Views/BoardsTab/TutorialLessons.swift`, dispatched in
+/// `ProfileRoute` in `Views/ProfileTab/ProfileRoute.swift`, dispatched in
 /// `MainTabView`.
 enum TasksTabRoute: Hashable {
     /// Owner ruling 2026-09-22 — a task that HEADS a shared-counter family
@@ -77,6 +77,7 @@ struct TasksTabView: View {
         _vm = State(initialValue: TasksTabViewModel(database: database))
     }
     @State private var showNewTaskSheet = false
+    @Environment(\.tutorialCoach) private var tutorialCoach
     @State private var expandedCompoundIds: Set<String> = []
 
     private struct PendingTaskDeletion: Identifiable {
@@ -515,10 +516,13 @@ struct TasksTabView: View {
             Spacer(minLength: 12)
             RisoIconButton(systemImage: "plus") {
                 switch segment.plusAction {
-                case .newTask: showNewTaskSheet = true
+                case .newTask:
+                    showNewTaskSheet = true
+                    tutorialCoach?.handle(.tasksPlusTapped)
                 case .newPool: path.append(PoolEditorRoute.new)
                 }
             }
+            .tutorialAnchor(.tasksPlus)
             .accessibilityLabel(segment.plusAction.accessibilityLabel)
         }
     }

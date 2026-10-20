@@ -3,20 +3,18 @@ import SwiftUI
 /// HelpView — Profile reorg PR1. Pushed from Settings' "Help & getting
 /// started" row (kicker "SETTINGS", title "Help").
 ///
-/// Contents: a "Getting started" card showing `{done}/8` with a button that
-/// opens the tutorial board (or, once complete, replays it after a confirm),
+/// Contents: a "Getting started" card showing `{done}/9` with a button that
+/// always opens the tutorial board (a finished lesson replays from its square),
 /// and a "Contact support" row that is an intentional PLACEHOLDER — present,
 /// disabled, caption "Coming soon" (owner decision #4,
 /// `.superpowers/sdd/2026-09-30-profile-reorg/owner-decisions.md`) until a
 /// real support address exists. Nothing else — no FAQ content.
 struct HelpView: View {
-    @EnvironmentObject var tutorialStore: TutorialProgressStore
+    @EnvironmentObject var tutorial: TutorialCoordinator
 
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Optional so #Preview / tests can mount this view standalone.
     var onOpenTutorial: (() -> Void)? = nil
-
-    @State private var showReplayConfirm = false
 
     var body: some View {
         ZStack {
@@ -39,15 +37,6 @@ struct HelpView: View {
             }
         }
         .navigationBarHidden(true)
-        .alert("Replay tutorial?", isPresented: $showReplayConfirm) {
-            Button("Cancel", role: .cancel) {}
-            Button("Replay") {
-                tutorialStore.reset()
-                onOpenTutorial?()
-            }
-        } message: {
-            Text("This resets your Getting Started progress back to 0/8.")
-        }
     }
 
     // MARK: - Getting started card
@@ -59,21 +48,13 @@ struct HelpView: View {
                     .font(.risoHead(16, .extraBold))
                     .foregroundStyle(Color.risoInk)
                 Spacer()
-                Text("\(tutorialStore.completedCount)/\(TutorialProgressStore.totalLessons)")
+                Text("\(tutorial.progress.doneCount)/\(TutorialLessonID.total)")
                     .font(.risoHead(14, .bold))
                     .foregroundStyle(Color.risoMuted)
             }
 
-            RisoButton(
-                title: tutorialStore.isComplete ? "Replay tutorial" : "Open tutorial board",
-                kind: .primary,
-                fullWidth: true
-            ) {
-                if tutorialStore.isComplete {
-                    showReplayConfirm = true
-                } else {
-                    onOpenTutorial?()
-                }
+            RisoButton(title: "Open tutorial board", kind: .primary, fullWidth: true) {
+                onOpenTutorial?()
             }
         }
         .padding(Riso.cardPadding)
@@ -100,6 +81,6 @@ struct HelpView: View {
 #Preview("In progress") {
     NavigationStack {
         HelpView()
-            .environmentObject(TutorialProgressStore())
+            .environmentObject(TutorialCoordinator.preview())
     }
 }

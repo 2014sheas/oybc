@@ -8,7 +8,7 @@ import Foundation
 ///   - the Shared counters section's most-recently-logged counters.
 ///
 /// Identity (name/email/avatar) and Getting Started progress are
-/// environment-sourced (`AuthService` / `TutorialProgressStore`) and read
+/// environment-sourced (`AuthService` / `TutorialCoordinator`) and read
 /// directly by `ProfileView` — this view model only owns state that needs a
 /// DB read, following the `AppDatabase`-injection seam (CLAUDE.md "DB access
 /// in new/touched ViewModels") so it's constructible against
@@ -279,18 +279,17 @@ final class ProfileHomeViewModel: ObservableObject {
         )
     }
 
-    /// Which Getting Started surface Profile home shows, per design handoff
-    /// §1.3: hidden once every lesson is done; the gold day-one hero (ABOVE
-    /// the tiles) only while `completedCount == 0`; the compact row
-    /// (BELOW the tiles) for every state in between.
+    /// Which Getting Started surface Profile home shows: the gold day-one hero
+    /// (ABOVE the tiles) while `completedCount == 0`, the compact row (BELOW
+    /// the tiles) from the first finished lesson on — for good, so the
+    /// walkthrough can always be replayed from Profile (owner decision
+    /// 2026-10-20; it used to hide at 9/9).
     enum GettingStartedDisplay: Equatable {
-        case hidden
         case dayOneHero
         case row
     }
 
-    nonisolated static func gettingStartedDisplay(completedCount: Int, isComplete: Bool) -> GettingStartedDisplay {
-        if isComplete { return .hidden }
-        return completedCount == 0 ? .dayOneHero : .row
+    nonisolated static func gettingStartedDisplay(completedCount: Int) -> GettingStartedDisplay {
+        completedCount == 0 ? .dayOneHero : .row
     }
 }

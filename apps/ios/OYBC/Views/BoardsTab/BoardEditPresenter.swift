@@ -263,6 +263,7 @@ struct BoardEditPresenter: ViewModifier {
                 },
                 onCancel: { taskEditTarget = nil }
             )
+            .tutorialExitGuard()
     }
 
     /// The board's window for a counter picked as a compound sub-task.

@@ -47,6 +47,9 @@ struct RisoMomentOverlay: View {
     var celebrationIntensity: Int = 7
     /// Snapshot seam: pins the replay at a beat (no clock, no motion).
     var beatOverride: Int? = nil
+    /// The tutorial Greenlog (Getting started): no Share; "Start my first board"
+    /// and a quiet "Back to the tutorial board" replace the board buttons.
+    var tutorialButtons: Bool = false
     var onShare: () -> Void = {}
     /// Dismisses back to the play board.
     var onBack: () -> Void = {}
@@ -226,7 +229,17 @@ struct RisoMomentOverlay: View {
 
     private var buttons: some View {
         VStack(spacing: 10) {
-            if kind == .bingo {
+            if tutorialButtons && kind == .greenlog {
+                RisoButton(title: "Start my first board", kind: .primary, fullWidth: true, large: true, action: onNewBoard)
+                Button(action: onBack) {
+                    Text("Back to the tutorial board")
+                        .font(.risoHead(14, .bold))
+                        .foregroundStyle(Color.risoOnColor.opacity(0.85))
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
+                }
+                .buttonStyle(.plain)
+            } else if kind == .bingo {
                 RisoButton(title: "Share this bingo", kind: .gold, systemImage: "square.and.arrow.up",
                            fullWidth: true, large: true, action: onShare)
                 RisoButton(title: "Back to board", kind: .neutral, fullWidth: true, large: true, action: onBack)

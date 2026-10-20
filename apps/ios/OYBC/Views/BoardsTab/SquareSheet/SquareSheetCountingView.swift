@@ -64,25 +64,31 @@ struct SquareSheetCountingView: View {
         }
         .padding(.top, 14)
 
-        TapLogChipRow(chips: count.chips, disabled: content.isBusy, busyLook: content.showsBusyLook, unit: countKindNeedsUnit(count.kind) ? count.unit : "") { chip in
-            if let value = chip.value {
-                actions.onLog(content.taskId, value, false)
-            } else {
-                entry = SquareSheetEntry(scopeTaskId: content.taskId, isRemove: false)
+        // The chips and the "Other…" entry row share the lesson's anchor, so the
+        // row a chip opens is lit (and tappable) with the chips.
+        VStack(spacing: 0) {
+            TapLogChipRow(chips: count.chips, disabled: content.isBusy, busyLook: content.showsBusyLook, unit: countKindNeedsUnit(count.kind) ? count.unit : "") { chip in
+                if let value = chip.value {
+                    actions.onLog(content.taskId, value, false)
+                } else {
+                    entry = SquareSheetEntry(scopeTaskId: content.taskId, isRemove: false)
+                }
+            }
+
+            if let open = entryOpen {
+                SquareSheetEntryRow(kind: count.kind, unit: count.unit, isRemove: open.isRemove, onSubmit: { amount in
+                    entry = nil
+                    if open.isRemove { actions.onRemove(content.taskId, amount) } else { actions.onLog(content.taskId, amount, true) }
+                }, onCancel: { entry = nil })
+                .padding(.top, 10)
             }
         }
+        .tutorialAnchor(.logChips)
         .padding(.top, 6)
-
-        if let open = entryOpen {
-            SquareSheetEntryRow(kind: count.kind, unit: count.unit, isRemove: open.isRemove, onSubmit: { amount in
-                entry = nil
-                if open.isRemove { actions.onRemove(content.taskId, amount) } else { actions.onLog(content.taskId, amount, true) }
-            }, onCancel: { entry = nil })
-            .padding(.top, 10)
-        }
 
         if showsStrip, let strip {
             UndoStrip(text: strip.text, disabled: content.isBusy, busyLook: content.showsBusyLook, onUndo: actions.onUndo)
+                .tutorialAnchor(.undoStrip)
                 .padding(.top, 10)
         }
 

@@ -128,6 +128,7 @@ struct SquaresEditGrid: View {
                     }
                 }
                 .offset(x: xOff, y: yOff)
+                .tutorialAnchor(.editSquare(slotIdx), radius: Riso.cellRadius)
                 .animation(.spring(response: 0.22, dampingFraction: 0.82), value: slotIdx)
             }
 

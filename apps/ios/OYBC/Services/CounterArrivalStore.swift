@@ -10,7 +10,7 @@ import Foundation
 /// `counterArrivalStore.ts` (`localStorage`); both platforms key the entry by
 /// the board id.
 ///
-/// House style follows `TutorialProgressStore` — `UserDefaults`-backed with an
+/// House style: `UserDefaults`-backed with an
 /// injectable `defaults` so unit tests can pass an isolated suite. Unlike that
 /// store this is a plain value-less service (no `@Published`): the arrival VM
 /// reads/writes it directly, nothing observes it.
@@ -21,6 +21,19 @@ final class CounterArrivalStore {
     /// - Parameter defaults: Injected for tests; defaults to `.standard`.
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    /// The defaults suite a tutorial sandbox lesson's boards use, so their
+    /// last-seen snapshots never touch the user's own store. Cleared when the
+    /// lesson ends (`TutorialCoordinator`).
+    static let tutorialSuiteName = "com.oybc.tutorial-sandbox"
+
+    /// The store for boards living in `database`: the standard one for the app
+    /// database, the throwaway tutorial suite for a sandbox.
+    static func forDatabase(_ database: AppDatabase) -> CounterArrivalStore {
+        database === AppDatabase.shared
+            ? CounterArrivalStore()
+            : CounterArrivalStore(defaults: UserDefaults(suiteName: tutorialSuiteName) ?? .standard)
     }
 
     private func key(boardId: String) -> String {
