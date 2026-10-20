@@ -215,6 +215,12 @@ struct TutorialBoardView: View {
             .presentationDetents([.medium])
         }
         .onAppear { middleRowWasDone = coach.progress.middleRowDone }
+        // The stage dismisses itself when the lesson closes; dropping the item
+        // here too means a dismissal lost under a nested sheet can't leave a
+        // dead cover with no exit.
+        .onChange(of: coach.isClosing) { _, closing in
+            if closing { stageLesson = nil }
+        }
     }
 
     /// A tap on a square: free lessons open their stage; Pro squares the stub.

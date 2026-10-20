@@ -177,6 +177,7 @@ extension BoardPlayView {
                 guard let strip = squareLogStrip else { return }
                 squareLogStrip = nil
                 viewModel.undoSquareLog(strip.undo)
+                tutorialCoach?.handle(.squareLogUndone) // a lesson lighting the strip steps back to the chips
             },
             onToggleChild: { id in
                 guard let placement = currentSquareSheetPlacement else { return }

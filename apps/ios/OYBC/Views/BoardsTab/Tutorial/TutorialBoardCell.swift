@@ -136,9 +136,11 @@ struct TutorialBoardCell: View {
         }
     }
 
-    /// The counting-style bar: blue fill = completed steps / total.
+    /// The counting-style bar: the step the lesson is on, over the total — the
+    /// same number the board's status line shows ("step 2 of 5" ↔ "2/5").
     private func stepBar(step: Int) -> some View {
-        let fraction = stepsTotal > 0 ? min(max(Double(step) / Double(stepsTotal), 0), 1) : 0
+        let current = min(step + 1, stepsTotal)
+        let fraction = stepsTotal > 0 ? min(max(Double(current) / Double(stepsTotal), 0), 1) : 0
         return ZStack {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -146,7 +148,7 @@ struct TutorialBoardCell: View {
                     Capsule().fill(Color.risoBlue).frame(width: geo.size.width * fraction)
                 }
             }
-            Text("\(step)/\(stepsTotal)")
+            Text("\(current)/\(stepsTotal)")
                 .font(.risoHead(10, .extraBold))
                 .monospacedDigit()
                 .foregroundStyle(Color.risoInk)
@@ -176,7 +178,7 @@ struct TutorialBoardCell: View {
         switch state {
         case _ where isPro: return "\(info.title), Pro lesson, locked"
         case .done: return "\(info.title), done"
-        case .inProgress(let step): return "\(info.title), \(step) of \(stepsTotal) steps"
+        case .inProgress(let step): return "\(info.title), step \(min(step + 1, stepsTotal)) of \(stepsTotal)"
         case .notStarted, .unrecognized: return info.title
         }
     }

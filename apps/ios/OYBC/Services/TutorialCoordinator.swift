@@ -34,6 +34,9 @@ struct TutorialSession: Equatable {
     /// Lesson 3: row-major slots of the squares not yet complete, reported by the
     /// play board; the finale lights every one of them.
     var incompleteSlots: [Int]?
+    /// Lesson 3: where each Sample week title sits right now, reported by the
+    /// play board (Edit lets the person drag squares around).
+    var slotByTitle: [String: Int]?
 
     /// The lesson's script.
     var steps: [TutorialStep] { TutorialCatalog.info(for: lesson).steps }
@@ -41,14 +44,18 @@ struct TutorialSession: Equatable {
     /// The current step (nil once past the end).
     var currentStep: TutorialStep? { steps.indices.contains(step) ? steps[step] : nil }
 
-    /// The controls the current step lights: its anchors, or (finale) every
-    /// still-incomplete square.
+    /// The controls the current step lights: its anchors (a `.square` resolved
+    /// to where its title sits now), or (finale) every still-incomplete square.
     var litAnchors: [TutorialAnchorID] {
         guard let step = currentStep else { return [] }
         if step.litsIncompleteSquares, let slots = incompleteSlots, !slots.isEmpty {
             return slots.map { .square($0) }
         }
-        return step.anchors
+        return step.anchors.map { anchor in
+            guard case .square(let seeded) = anchor, let slots = slotByTitle,
+                  let title = TutorialCatalog.sampleTitle(atSeededSlot: seeded), let now = slots[title] else { return anchor }
+            return .square(now)
+        }
     }
 }
 
@@ -340,6 +347,14 @@ final class TutorialCoordinator: ObservableObject {
     func reportIncomplete(slots: [Int]) {
         guard var current = session, current.incompleteSlots != slots else { return }
         current.incompleteSlots = slots
+        session = current
+    }
+
+    /// Lesson 3: where each placed title sits now, so a `.square` anchor follows
+    /// its square after an Edit move.
+    func reportSlots(byTitle slots: [String: Int]) {
+        guard var current = session, current.slotByTitle != slots else { return }
+        current.slotByTitle = slots
         session = current
     }
 

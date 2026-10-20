@@ -74,6 +74,8 @@ extension BoardPlayView {
     private func openSquareSheet(_ bt: BoardTask, entry: SquareSheetEntry?) {
         squareSheetEntry = entry
         squareSheetBoardTaskId = bt.id
+        // The same hook a tap fires, so a lesson waiting for the sheet moves on.
+        if taskMap[bt.taskId]?.type == .counting { tutorialCoach?.handle(.countingSheetOpened) }
     }
 
     /// A menu write's Undo toast: the log text and an Undo that reverses exactly that write.

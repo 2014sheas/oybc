@@ -176,6 +176,14 @@ struct TutorialCoachOverlay: View {
     ) -> some View {
         if hasTarget {
             targetLayer(geo: geo, session: session, step: step, lit: lit)
+        } else if !isRoot, step.onSheet {
+            // The sheet owns the step but its lit control went away (the Undo
+            // strip after Undo): keep the mark — and its exit / Next — on the
+            // sheet, where the root layer defers to it.
+            mark(session: session, step: step, notch: .none, notchOffset: 0)
+                .padding(.horizontal, TutorialCoachGeometry.markInset)
+                .padding(.bottom, 24 + keyboardHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         } else if isRoot {
             let sheetOwnsStep = step.onSheet && coach.sheetLayerCount > 0
             if step.onSheet {
@@ -340,7 +348,10 @@ private struct TutorialExitChip: View {
     @State private var confirming = false
 
     var body: some View {
-        if coach.session?.phase == .running, !coach.isClosing {
+        // Stays mounted through `.confirmingLeave`: the tap flips the phase, and
+        // the Leave sheet hangs off this very view, so an `if phase == .running`
+        // here would unmount the sheet before it could present.
+        if let session = coach.session, session.phase != .complete, !coach.isClosing {
             Button {
                 confirming = true
                 coach.requestLeave()
@@ -352,6 +363,7 @@ private struct TutorialExitChip: View {
                     .risoCard(fill: .risoPaper2)
             }
             .buttonStyle(.plain)
+            .disabled(session.phase != .running)
             .padding(.trailing, 14)
             .padding(.bottom, 24)
             .accessibilityLabel("Exit lesson")

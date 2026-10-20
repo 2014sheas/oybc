@@ -53,8 +53,9 @@ extension BoardWizardTasksStepView {
             coach.handle(.sourcesSheetClosedEmpty)
             return
         }
-        let name = sources.compactMap { supplyInfoBySourceId[$0.sourceId]?.displayName }.first ?? "This pool"
-        coach.reportPool(summary: "\(name) fills \(Self.spelledCount(tasksRequired)) squares")
+        let names = sources.compactMap { supplyInfoBySourceId[$0.sourceId]?.displayName }
+        let subject = names.count == 1 ? names[0] : "Your pools"
+        coach.reportPool(summary: "\(subject) \(names.count == 1 ? "fills" : "fill") \(Self.spelledCount(tasksRequired)) squares")
         coach.handle(.poolsPicked)
     }
 

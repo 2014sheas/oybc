@@ -68,6 +68,8 @@ enum TutorialEvent: Equatable {
     case sourcesSheetClosedEmpty
     /// The square sheet closed (swipe-down or any hand-off).
     case squareSheetClosed
+    /// The square sheet's Undo strip was used (the log is gone, so is the strip).
+    case squareLogUndone
 }
 
 // MARK: - Steps
@@ -250,9 +252,19 @@ enum TutorialCatalog {
             return 4                                // light Read again
         case (.completeBoard, .squareSheetClosed) where step == 6:
             return 7                                // the sheet is already gone: hold Tidy desk
+        case (.completeBoard, .squareLogUndone) where step == 6:
+            return 5                                // the log was undone: log with a chip again
         default:
             return nil
         }
+    }
+
+    /// The title that starts in a Sample week slot (`.square(slot)` anchors
+    /// name squares by their seeded slot; the board reports where each title
+    /// sits now, since Edit lets the person drag squares around).
+    static func sampleTitle(atSeededSlot slot: Int) -> String? {
+        let grid = AppDatabase.tutorialSampleWeekGrid
+        return grid.indices.contains(slot) ? grid[slot].title : nil
     }
 }
 

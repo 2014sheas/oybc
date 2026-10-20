@@ -481,4 +481,40 @@ final class TutorialCoordinatorTests: XCTestCase {
         coach.handle(.squareSheetClosed)
         XCTAssertEqual(coach.session?.step, 7, "ignored elsewhere")
     }
+
+    func test_undoOnTheStripStepsBackToTheChips() throws {
+        let (coach, _) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.completeBoard))
+        for event: TutorialEvent in [.editEntered, .editSaved, .simpleSquareDone] { coach.handle(event) }
+        coach.next()
+        coach.handle(.countingSheetOpened)
+        coach.handle(.countLogged)
+        XCTAssertEqual(coach.session?.step, 6, "the Undo strip")
+        coach.handle(.squareLogUndone)
+        XCTAssertEqual(coach.session?.step, 5, "log with a chip again")
+        coach.handle(.squareLogUndone)
+        XCTAssertEqual(coach.session?.step, 5, "ignored elsewhere")
+    }
+
+    // MARK: - Square anchors follow their title
+
+    /// Edit lets the person drag squares around: a `.square` anchor names its
+    /// square by seeded slot and resolves to wherever that title sits now.
+    func test_squareAnchorsFollowTheTitleTheBoardReports() throws {
+        let (coach, _) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.completeBoard))
+        coach.handle(.editEntered)
+        coach.handle(.editSaved)
+        XCTAssertEqual(coach.session?.litAnchors, [.square(TutorialCatalog.SampleSlot.stretch)], "the seeded slot before the board reports")
+        // Journal was dragged onto Read's slot (and Read onto Journal's).
+        var slots: [String: Int] = [:]
+        for (index, square) in AppDatabase.tutorialSampleWeekGrid.enumerated() { slots[square.title] = index }
+        slots["Journal"] = TutorialCatalog.SampleSlot.read
+        slots["Read 20 pages"] = TutorialCatalog.SampleSlot.journal
+        coach.reportSlots(byTitle: slots)
+        XCTAssertEqual(coach.session?.litAnchors, [.square(TutorialCatalog.SampleSlot.stretch)], "Stretch did not move")
+        coach.handle(.simpleSquareDone)
+        coach.next()
+        XCTAssertEqual(coach.session?.litAnchors, [.square(TutorialCatalog.SampleSlot.journal)], "Read is lit where it sits now")
+    }
 }
