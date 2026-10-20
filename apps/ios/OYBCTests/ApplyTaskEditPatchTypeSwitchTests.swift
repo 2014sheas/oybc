@@ -68,6 +68,7 @@ final class ApplyTaskEditPatchTypeSwitchTests: XCTestCase {
         let db = try seeded()
         var t = plain("T", isCompleted: true)
         t.completedAt = occurred
+        t.totalCompletions = 1
         try db.saveTask(t)
         try completion(db, taskId: "T")
         try placeOn(db, board: "b-live", taskId: "T", completed: 1)
@@ -88,6 +89,7 @@ final class ApplyTaskEditPatchTypeSwitchTests: XCTestCase {
         XCTAssertFalse(row.isCompleted)
         XCTAssertEqual(row.currentCount, 0)
         XCTAssertNil(row.completedAt)
+        XCTAssertEqual(row.totalCompletions, 0, "#384: a Simple completion counts nothing for Counting")
         XCTAssertEqual(row.version, 2)
         let event = try db.read { try TaskEvent.fetchOne($0, key: "e1") }
         XCTAssertEqual(event?.isDeleted, false)
@@ -119,7 +121,9 @@ final class ApplyTaskEditPatchTypeSwitchTests: XCTestCase {
 
     func test_simpleToCompound_keepsId_linksNewSubTasks() throws {
         let db = try seeded()
-        try db.saveTask(plain("T"))
+        var t = plain("T")
+        t.totalCompletions = 2
+        try db.saveTask(t)
         try placeOn(db, board: "b-live", taskId: "T", completed: 0)
         var structure = TaskEditPatch(title: "Stretch")
         structure.operatorType = .and
@@ -134,6 +138,7 @@ final class ApplyTaskEditPatchTypeSwitchTests: XCTestCase {
         XCTAssertEqual(row.type, .compound)
         XCTAssertEqual(row.operatorType, .and)
         XCTAssertFalse(row.isCompleted)
+        XCTAssertEqual(row.totalCompletions, 0, "#384: cleared with the latch")
         let links = try db.read {
             try CompoundChild.filter(Column("compoundTaskId") == "T" && Column("isDeleted") == false).fetchAll($0)
         }

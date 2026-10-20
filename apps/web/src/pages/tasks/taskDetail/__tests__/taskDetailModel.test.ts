@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { BoardStatus, CenterSquareType, OperatorType, TaskType, Timeframe, type Board, type BoardTask, type CompoundChild, type Task, type TaskEvent, type TaskPlacementRow } from '@oybc/shared';
 import { db } from '../../../../db/internal';
 import { loadTaskDetailPlacements } from '../../../../db/operations/taskDetailPlacements';
-import { activityDot, activityWhen, buildBoardRows, heroKicker, heroTone, notDoneLabel, segmentOptions, subtasksHeading } from '../taskDetailModel';
+import { activityDot, activityFooter, activityWhen, buildBoardRows, heroKicker, heroTone, notDoneLabel, segmentOptions, subtasksHeading } from '../taskDetailModel';
 
 const NOW = new Date('2026-10-15T12:00:00');
 const iso = (d: Date): string => d.toISOString();
@@ -130,6 +130,20 @@ describe('buildBoardRows', () => {
     const ended = board({ endDate: iso(new Date(NOW.getTime() - 864e5)) });
     const [n] = buildBoardRows({ rows: [kRow({ count: 0, goal: null })], boards: [ended], taskById: { t: noGoal }, now: NOW });
     expect(n.missed).toBe(false);
+  });
+});
+
+describe('activityFooter (#384)', () => {
+  it('a Simple task carries its completion count; every other type only the update time', () => {
+    expect(activityFooter(TaskType.NORMAL, 3, '2 days ago')).toBe('Completed 3× all-time · updated 2 days ago');
+    expect(activityFooter(TaskType.NORMAL, 0, null)).toBe('Completed 0× all-time');
+    // Feed still loading: no placeholder count.
+    expect(activityFooter(TaskType.NORMAL, null, '2 days ago')).toBe('Updated 2 days ago');
+    expect(activityFooter(TaskType.NORMAL, null, null)).toBe('');
+    for (const type of [TaskType.COUNTING, TaskType.COMPOUND, TaskType.ACHIEVEMENT]) {
+      expect(activityFooter(type, 0, '2 days ago')).toBe('Updated 2 days ago');
+      expect(activityFooter(type, 4, null)).toBe('');
+    }
   });
 });
 

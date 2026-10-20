@@ -479,7 +479,9 @@ final class TaskDetailViewModel: ObservableObject {
             activeBoards: active, pastBoards: past, parents: parents, subtasks: subtasks, subtaskRule: ruleLabel,
             watches: watches, watchesHeading: watchesHeading, watchesMeta: watchesMeta, watchedBoardId: watchedBoardId,
             templates: snap.templates.map { .init(id: $0.id, name: $0.name) },
-            activity: lines, footer: TaskDetailFormat.footer(completions: feed.completionCount, updatedAt: task.updatedAt, now: now)
+            activity: lines, footer: TaskDetailFormat.footer(
+                type: task.type, completions: feed.completionCount, updatedAt: task.updatedAt, now: now
+            )
         )
     }
 

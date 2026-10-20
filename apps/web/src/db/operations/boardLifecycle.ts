@@ -10,6 +10,7 @@ import { addToSyncQueue } from './syncQueue';
 import { sealBoard, reDeriveSealedBoardsForTasks } from './sealing';
 import { runBoardCascadeForBoardId, runBoardCascadeForTasks } from './orchestration';
 import { loadPlacementReach } from './placementReach';
+import { realignLinkedKindsOnReopen } from './countKindSwitch';
 
 /**
  * Board Edit redesign slice 4 — Close / Reopen + the achievement-watcher
@@ -82,12 +83,15 @@ export async function closeBoard(boardId: string, now: string = currentTimestamp
 /**
  * Reopen a closed board (D6): clears `sealedAt` + `sealedCompletedCells`,
  * stamps `reopenedAt` (never cleared — a manually reopened board never
- * auto-closes again), bumps `version`, enqueues sync, then re-runs the LIVE
- * derivation for this one board (recomputing `completedTasks` /
- * `linesCompleted` / `completedLineIds` / status from events in
- * `[startDate, endDate]` — exactly {@link runBoardCascadeForBoardId}, which
- * naturally sees the just-cleared `sealedAt` inside this same transaction),
- * then refreshes any achievement watcher of this board (D8).
+ * auto-closes again), bumps `version`, enqueues sync, re-aligns any linked
+ * counter copy the seal had frozen at an old kind
+ * ({@link realignLinkedKindsOnReopen}, docs/COUNTER_KINDS.md D5), then
+ * re-runs the LIVE derivation for this one board (recomputing
+ * `completedTasks` / `linesCompleted` / `completedLineIds` / status from
+ * events in `[startDate, endDate]` — exactly {@link runBoardCascadeForBoardId},
+ * which naturally sees the just-cleared `sealedAt` inside this same
+ * transaction) and every live board a re-aligned copy reaches, then refreshes
+ * any achievement watcher of this board (D8).
  *
  * Spawns nothing (no template / recurring write).
  *
@@ -112,9 +116,13 @@ export async function reopenBoard(boardId: string, now: string = currentTimestam
     const updated = await db.boards.get(boardId);
     if (updated) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updated, 0);
 
+    // A linked copy the seal froze at an old kind follows its root again.
+    const realigned = await realignLinkedKindsOnReopen(boardId, now);
+
     // Re-derive this board LIVE now that `sealedAt` is clear (read inside
     // this same transaction, so it sees the write above).
     await runBoardCascadeForBoardId(boardId);
+    if (realigned.length > 0) await runBoardCascadeForTasks(realigned);
     await refreshWatchersForBoards([boardId]);
   });
 }

@@ -102,9 +102,11 @@ export interface Task {
   currentCount?: number;         // Lifetime cache, up to 2dp (NOTE: moved here from BoardTask)
 
   // Aggregate stats (denormalized for performance)
-  totalCompletions: number;      // ⚠️ NOT currently derived from task_events — stuck at its creation-time
-                                 // value (WINDOWED_COMPLETION.md's "becomes real" table row was never
-                                 // implemented; user-visible on both task-detail screens). Issue #384.
+  totalCompletions: number;      // LIFETIME cache (issue #384): a NORMAL task's non-deleted `completion`
+                                 // events; 0 for COUNTING (increments are not completions). Stamped with
+                                 // the other caches (authored write → version bump; pull recompute →
+                                 // no bump); a compound / achievement / linked row owns no events and
+                                 // keeps 0. A task stamped before #384 heals at its next event write or pull.
   totalInstances: number;        // How many boards include this task
 
   // Timestamps

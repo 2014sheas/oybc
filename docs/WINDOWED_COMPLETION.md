@@ -262,6 +262,18 @@ Kept, still synced, stamped transactionally on every event write — but demoted
 - They now mean **lifetime state**: `isCompleted` = latest lifetime toggle state,
   `currentCount` = lifetime delta sum, `completedAt` = `occurredAt` of the latest
   non-deleted completion event.
+- **`totalCompletions` is the fourth cache** (shipped for [#384](https://github.com/2014sheas/oybc/issues/384),
+  2026-10-18): a NORMAL task's count of non-deleted `completion` events; always
+  `0` for COUNTING (its occurrences are increments; a completion left over from
+  a Simple → Counting switch counts nothing for the new type). It rides every
+  stamp the other three do — `computeTaskCachesFromEvents` (web
+  `db/operations/taskEvents.ts` ↔ iOS `AppDatabase+TaskEvents.swift`) feeds the
+  authored stamp, the pull recompute, the kind switch, the type switch and
+  counter-delete unlink; a switch into Compound clears it with the latch. A
+  task stamped before #384 heals at its next event write or event pull — no
+  migration, no extra write. Task Detail's Activity footer reads the same count
+  from the feed, and shows "Completed ‹n›× all-time" for a Simple task only
+  (every other type: "Updated ‹relative›").
 - Library/global surfaces keep reading them (no UI churn there).
 - Board grids and the derivation pass **stop reading them** for anything windowed.
 - **Cache stamps are authored writes**: they ride the same transaction as the
@@ -870,7 +882,7 @@ for fresh installs, ongoing syncs, and pull races.
 | Lost counting increments under LWW (`TASK_SYSTEM.md` Example 3) | Fixed for all counting tasks — union of events |
 | `sharedCounterMerge` + `lastSyncedCount` machinery | Retired in PR B (field inert; dead code deleted in PR D) |
 | Greenlog revert on expired boards (`orchestration.ts`) | Impossible once sealed; the revert branch remains for live boards only |
-| `totalCompletions` | Becomes real: count of non-deleted completion events (recomputed with caches) |
+| `totalCompletions` | **Real since #384 (2026-10-18):** a NORMAL task's count of non-deleted completion events (0 for COUNTING), stamped and pull-recomputed with the other caches — see [§Task caches](#taskiscompleted--currentcount--completedat-become-caches) |
 | Persisted GREENLOG-history / streak log groundwork | Enabled (roadmap follow-up builds on `task_events` + sealed boards) |
 
 ## Performance

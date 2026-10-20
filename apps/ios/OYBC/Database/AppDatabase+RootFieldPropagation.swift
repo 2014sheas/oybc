@@ -13,7 +13,7 @@ extension AppDatabase {
     /// The root + its candidate copies, read BEFORE the root edit is written.
     struct RootPropagationSnapshot {
         let root: Task
-        /// Every row with `sharedCounterId == root.id`, annotated with sealed-board placement.
+        /// Every row with `sharedCounterId == root.id`, annotated with sealed-board reach.
         let copies: [RootFieldPropagation.Copy]
     }
 
@@ -31,9 +31,10 @@ extension AppDatabase {
               root.type == .counting, root.sharedCounterId == nil else { return nil }
         let rows = try Task.filter(Column("sharedCounterId") == root.id).fetchAll(db)
         guard !rows.isEmpty else { return nil }
-        let copies = try rows.map { row in
-            RootFieldPropagation.Copy(task: row, onSealedBoard: try isPlacedOnSealedBoard(db: db, taskId: row.id))
-        }
+        // A copy a sealed board holds — directly or through a placed compound —
+        // is that closed board's record (issue #576 item 2).
+        let sealed = try taskIdsReachingSealedBoards(db: db, taskIds: Set(rows.map(\.id)))
+        let copies = rows.map { RootFieldPropagation.Copy(task: $0, onSealedBoard: sealed.contains($0.id)) }
         return RootPropagationSnapshot(root: root, copies: copies)
     }
 
@@ -84,19 +85,5 @@ extension AppDatabase {
             try Self.runBoardCascadeForTasks(db: db, changedTaskIds: written, now: now)
         }
         return written
-    }
-
-    /// Whether `taskId` has a live placement on a live sealed board.
-    private static func isPlacedOnSealedBoard(db: Database, taskId: String) throws -> Bool {
-        let boardIds = try BoardTask
-            .filter(Column("taskId") == taskId && Column("isDeleted") == false)
-            .fetchAll(db)
-            .map(\.boardId)
-        guard !boardIds.isEmpty else { return false }
-        return try Board
-            .filter(boardIds.contains(Column("id")))
-            .filter(Column("isDeleted") == false)
-            .filter(Column("sealedAt") != nil)
-            .fetchCount(db) > 0
     }
 }

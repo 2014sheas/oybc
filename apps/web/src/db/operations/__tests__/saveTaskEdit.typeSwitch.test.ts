@@ -107,7 +107,7 @@ afterEach(async () => {
 
 describe('saveTaskEdit — type switch (global editor)', () => {
   it('Simple → Counting: counting fields set, old completion inert, caches recomputed, every live board re-derived; sealed board untouched', async () => {
-    await db.tasks.add(task('T', { isCompleted: true, completedAt: '2026-10-06T09:00:00.000Z' }));
+    await db.tasks.add(task('T', { isCompleted: true, completedAt: '2026-10-06T09:00:00.000Z', totalCompletions: 1 }));
     await db.taskEvents.add(event('e1', 'T', 'completion'));
     await place('b-live', 'T');
     await place('b-sealed', 'T', { sealedAt: '2026-10-07T12:00:00.000Z', sealedCompletedCells: [0] });
@@ -117,7 +117,7 @@ describe('saveTaskEdit — type switch (global editor)', () => {
     const row = await db.tasks.get('T');
     expect(row).toMatchObject({
       type: TaskType.COUNTING, action: 'Run', unit: 'km', maxCount: 5, countKind: 'discrete',
-      isCompleted: false, currentCount: 0, version: 2,
+      isCompleted: false, currentCount: 0, totalCompletions: 0, version: 2,
     });
     expect(row?.completedAt).toBeUndefined();
     // The old completion event survives — inert for a counting task.
@@ -147,12 +147,12 @@ describe('saveTaskEdit — type switch (global editor)', () => {
   });
 
   it('Simple → Compound: the task keeps its id, becomes a compound and links its new sub-tasks', async () => {
-    await db.tasks.add(task('T'));
+    await db.tasks.add(task('T', { totalCompletions: 2 }));
     await place('b-live', 'T');
 
     await saveTaskEdit('T', { type: TaskType.COMPOUND, title: 'Stretch', compound: compoundPatch([sub('Hamstrings'), sub('Calves')]) });
 
-    expect(await db.tasks.get('T')).toMatchObject({ type: TaskType.COMPOUND, operator: OperatorType.AND, isCompleted: false });
+    expect(await db.tasks.get('T')).toMatchObject({ type: TaskType.COMPOUND, operator: OperatorType.AND, isCompleted: false, totalCompletions: 0 });
     const links = (await db.compoundChildren.where('compoundTaskId').equals('T').toArray()).filter((l) => !l.isDeleted);
     expect(links).toHaveLength(2);
   });

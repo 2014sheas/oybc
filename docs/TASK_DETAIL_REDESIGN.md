@@ -334,6 +334,8 @@ open). Busy disables write items.
   ends ‹day› · ‹n› days left" · value · chevron) · Links (shared counter ·
   subtask of · part of repeating board; compound sub-tasks; achievement
   watches) · Activity (feed + footer "Completed ‹n›× all-time · updated
+  ‹relative›" — amended 2026-10-18, #384: a Simple task only, since only its
+  completions are recorded occurrences; every other type shows "Updated
   ‹relative›"). Selected segment survives content swaps in the sheet.
 - **⋯ menu:** Place on a board… (opens the existing placement flow from Task
   Detail if one exists, else the board picker used by the Tasks tab — if none

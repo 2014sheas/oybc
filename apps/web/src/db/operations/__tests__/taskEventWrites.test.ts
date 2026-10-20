@@ -12,6 +12,7 @@ import {
 import { db } from '../../internal';
 import { handleTaskCompletion } from '../orchestration';
 import { toggleTaskCompletionAndCascade } from '../tasks.crud';
+import { computeTaskCachesFromEvents } from '../taskEvents';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Write paths + §Testing
@@ -233,5 +234,48 @@ describe('Windowed Completion — library-context toggle (unplaced compound chil
     await toggleTaskCompletionAndCascade('task-1');
     expect(await liveEvents()).toHaveLength(0);
     expect((await db.tasks.get('task-1'))?.isCompleted).toBe(false);
+  });
+});
+
+describe('Windowed Completion — totalCompletions cache (issue #384)', () => {
+  const ev = (id: string, kind: TaskEvent['kind'], isDeleted = false, delta?: number): TaskEvent =>
+    ({ id, userId: 'user-1', taskId: 'task-1', kind, delta, occurredAt: START, createdAt: START, updatedAt: START, version: 1, isDeleted }) as TaskEvent;
+
+  it('counts a Simple task\'s live completions; a Counting task\'s is always 0', async () => {
+    const normal = await seedTask();
+    expect(computeTaskCachesFromEvents(normal, [ev('a', 'completion'), ev('b', 'completion'), ev('c', 'completion', true)]).totalCompletions).toBe(2);
+    expect(computeTaskCachesFromEvents(normal, []).totalCompletions).toBe(0);
+    const counting = { ...normal, type: TaskType.COUNTING, maxCount: 3 } as Task;
+    // Increments are not completions, and a completion left over from a
+    // Simple → Counting switch counts nothing for the new type.
+    expect(computeTaskCachesFromEvents(counting, [ev('a', 'increment', false, 3), ev('b', 'completion')]).totalCompletions).toBe(0);
+  });
+
+  it('the authored stamp writes it on complete and un-complete (version bump + enqueue)', async () => {
+    await seedTask();
+    await seedEvent({ id: 'e-old', kind: 'completion', occurredAt: '2025-12-01T00:00:00.000Z' });
+    await seedBoard();
+    await seedBoardTask();
+
+    await handleTaskCompletion('board-1', 'bt-1', { isCompleted: true });
+    let task = await db.tasks.get('task-1');
+    expect(task?.totalCompletions).toBe(2); // the earlier window's completion + this one
+    expect(task?.version).toBe(2);
+    const queued = (await db.syncQueue.toArray()).find((r) => r.entityType === 'tasks' && r.entityId === 'task-1');
+    expect((JSON.parse(queued?.payload ?? '{}') as Task).totalCompletions).toBe(2);
+
+    await handleTaskCompletion('board-1', 'bt-1', { isCompleted: false });
+    task = await db.tasks.get('task-1');
+    expect(task?.totalCompletions).toBe(1);
+  });
+
+  it('a Counting task logs increments and keeps 0', async () => {
+    await seedTask({ type: TaskType.COUNTING, maxCount: 2, currentCount: 0 });
+    await seedBoard();
+    await seedBoardTask();
+    await handleTaskCompletion('board-1', 'bt-1', { currentCount: 2 });
+    const task = await db.tasks.get('task-1');
+    expect(task?.isCompleted).toBe(true);
+    expect(task?.totalCompletions).toBe(0);
   });
 });

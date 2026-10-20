@@ -317,7 +317,10 @@ final class TaskDetailViewModelTests: XCTestCase {
 
         let kinds = Set(try XCTUnwrap(vm.model).activity.map(\.kind))
         XCTAssertTrue(kinds.isSuperset(of: [.logged, .placed, .missed, .created]))
-        XCTAssertTrue(try XCTUnwrap(vm.model).footer.hasPrefix("Completed 0× all-time"))
+        // A Counting task logs increments, not completions: no count (#384).
+        let footer = try XCTUnwrap(vm.model).footer
+        XCTAssertTrue(footer.hasPrefix("Updated "), footer)
+        XCTAssertFalse(footer.contains("× all-time"), footer)
     }
 
     // MARK: Closest line (the one new read)

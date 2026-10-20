@@ -115,7 +115,10 @@ final class WindowedCompletionTests: XCTestCase {
         let after = try fetchTask(db, "t1")
         XCTAssertTrue(after.isCompleted, "lifetime cache stamped complete")
         XCTAssertEqual(after.completedAt, now)
+        XCTAssertEqual(after.totalCompletions, 1, "#384: the completion count rides the same stamp")
         XCTAssertGreaterThan(after.version, 1, "authored stamp bumps Task.version")
+        let queued = try XCTUnwrap(db.fetchPendingSyncItems().first { $0.entityType == "tasks" && $0.entityId == "t1" })
+        XCTAssertEqual(try JSONDecoder().decode(Task.self, from: Data(queued.payload.utf8)).totalCompletions, 1)
 
         // Board cascade recomputed the 1x1 board to greenlog.
         let board = try db.fetchBoard(id: "b1")!
@@ -153,6 +156,7 @@ final class WindowedCompletionTests: XCTestCase {
 
         // ...but the LIFETIME cache still reflects the surviving pre-window completion.
         XCTAssertTrue(try fetchTask(db, "t1").isCompleted, "lifetime cache honors the pre-window completion")
+        XCTAssertEqual(try fetchTask(db, "t1").totalCompletions, 1, "#384: only the surviving completion counts")
     }
 
     // MARK: - 3. Standalone counting increment → +1 event, windowed count
@@ -219,15 +223,22 @@ final class WindowedCompletionTests: XCTestCase {
         XCTAssertEqual(cCache.currentCount, 5, "lifetime sum ignores the tombstoned +1")
         XCTAssertTrue(cCache.isCompleted)
         XCTAssertEqual(cCache.completedAt, "2026-06-05T00:00:00.000", "latest live increment occurredAt")
+        // #384: increments are not completions, nor is a completion left over
+        // from a Simple → Counting switch.
+        let leftover = makeEvent("d", taskId: "c1", kind: .completion, occurredAt: "2026-05-02T00:00:00.000")
+        XCTAssertEqual(AppDatabase.computeTaskCachesFromEvents(task: counting, events: cEvents + [leftover]).totalCompletions, 0)
 
         let normal = makeTask("n1", type: .normal)
         let nEvents = [
             makeEvent("x", taskId: "n1", kind: .completion, occurredAt: "2026-06-01T00:00:00.000"),
             makeEvent("y", taskId: "n1", kind: .completion, occurredAt: "2026-06-09T00:00:00.000"),
+            makeEvent("z", taskId: "n1", kind: .completion, occurredAt: "2026-06-10T00:00:00.000", isDeleted: true),
         ]
         let nCache = AppDatabase.computeTaskCachesFromEvents(task: normal, events: nEvents)
         XCTAssertTrue(nCache.isCompleted)
         XCTAssertEqual(nCache.completedAt, "2026-06-09T00:00:00.000")
+        XCTAssertEqual(nCache.totalCompletions, 2, "#384: live completion events; the tombstone doesn't count")
+        XCTAssertEqual(AppDatabase.computeTaskCachesFromEvents(task: normal, events: []).totalCompletions, 0)
     }
 
     // MARK: - 6. Backfill helper: carve-out + determinism
@@ -288,7 +299,12 @@ final class WindowedCompletionTests: XCTestCase {
         // The local task's cache recomputed from the pulled event (NO version bump).
         let t = try fetchTask(db, "t1")
         XCTAssertTrue(t.isCompleted)
+        XCTAssertEqual(t.totalCompletions, 1, "#384: the stale 0 heals from the pulled event")
         XCTAssertEqual(t.version, 1, "pull recompute is a non-authored write")
+        XCTAssertFalse(
+            try db.fetchPendingSyncItems().contains { $0.entityType == "tasks" && $0.entityId == "t1" },
+            "and enqueues nothing for the task (no pull-path churn)"
+        )
 
         // Orphan event upserted but its (missing) task can't be recomputed — no crash.
         let orphanRows = try db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM task_events WHERE taskId = 'missing'") ?? 0 }

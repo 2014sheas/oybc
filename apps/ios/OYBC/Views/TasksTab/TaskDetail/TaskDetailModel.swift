@@ -103,7 +103,7 @@ struct TaskDetailModel: Equatable {
     var watchedBoardId: String? = nil
     var templates: [Template] = []
     var activity: [ActivityLine] = []
-    /// "Completed 3× all-time · updated 2d ago".
+    /// "Completed 3× all-time · updated 2d ago" (Simple) / "Updated 2d ago".
     var footer: String = ""
 
     /// The Boards tab's count chip: "Boards · 2" (every board the task reaches).
@@ -235,10 +235,26 @@ enum TaskDetailFormat {
         return f.string(from: d)
     }
 
-    /// "Completed 3× all-time · updated 2d ago".
-    static func footer(completions: Int, updatedAt: String, now: Date) -> String {
+    /// The Activity footer: "Completed 3× all-time · updated 2d ago" for a
+    /// Simple task; "Updated 2d ago" for every other type. Only a Simple
+    /// task's completions are recorded occurrences (`completion` events — the
+    /// same count its `totalCompletions` cache holds); a Counting task logs
+    /// increments and a Compound / Achievement owns no events, so a
+    /// completion count there would be a permanent 0 (issue #384). Twin of
+    /// the web `activityFooter`.
+    ///
+    /// - Parameters:
+    ///   - type: The task's type.
+    ///   - completions: Its live completion events (the activity feed's count).
+    ///   - updatedAt: `task.updatedAt`.
+    ///   - now: The clock for the relative time.
+    /// - Returns: The footer text ("" for a non-Simple task whose `updatedAt`
+    ///   does not parse).
+    static func footer(type: TaskType, completions: Int, updatedAt: String, now: Date) -> String {
+        let rel = RelativeTime.formatRelativeTime(updatedAt, now: now)
+        guard type == .normal else { return rel.map { "Updated \($0)" } ?? "" }
         var text = "Completed \(completions)× all-time"
-        if let rel = RelativeTime.formatRelativeTime(updatedAt, now: now) { text += " · updated \(rel)" }
+        if let rel { text += " · updated \(rel)" }
         return text
     }
 }

@@ -64,9 +64,9 @@ enum TaskTypeSwitch {
 
     /// `task` with its type set to `next` and the fields the new type cannot
     /// carry cleared: into Simple drops action / unit / goal / count; into
-    /// Compound also drops the own latch (a compound derives from its
-    /// sub-tasks). `countKind` is left to the caller (never cleared — sync
-    /// merge-writes it). Pure; no-op when the type is unchanged.
+    /// Compound also drops the own latch and `totalCompletions` (a compound
+    /// derives from its sub-tasks). `countKind` is left to the caller (never
+    /// cleared — sync merge-writes it). Pure; no-op when the type is unchanged.
     ///
     /// - Parameters:
     ///   - task: The stored (or staged) task.
@@ -88,6 +88,7 @@ enum TaskTypeSwitch {
             t.currentCount = nil
             t.isCompleted = false
             t.completedAt = nil
+            t.totalCompletions = 0
         default:
             break
         }

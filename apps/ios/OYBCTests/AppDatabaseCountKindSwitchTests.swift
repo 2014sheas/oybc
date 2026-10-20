@@ -89,23 +89,99 @@ final class AppDatabaseCountKindSwitchTests: XCTestCase {
         XCTAssertEqual(try eventSnapshot(db), eventsBefore)
     }
 
-    /// Web twin: "re-derives a CLOSED board placing a linked row whose goal
-    /// rounded (the sanctioned sealed path)".
-    func test_switch_reDerivesAClosedBoardWhoseLinkedGoalRounded() throws {
+    /// Web twin: "leaves a linked row on a CLOSED board untouched, so the
+    /// closed record never changes (#576 item 2)".
+    func test_switch_leavesALinkedRowOnAClosedBoardUntouched() throws {
         // Ended row goal 2.45; the root logged 2.4 inside the ended window → not met.
+        // Switched, that row would round to goal 2 / count 2 and flip the record.
         let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
         try K.addIncrement(db, taskId: "root", delta: 2.4, occurredAt: "2026-09-16T10:00:00.000Z")
         var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
         ended.sealedAt = "2026-09-21T09:00:00.000Z"
         ended.sealedCompletedCells = []
         try db.saveBoard(ended)
+        let endedRowBefore = try XCTUnwrap(K.fetchTask(db, "ended"))
+        // The confirm counts only the rows the switch writes.
+        XCTAssertEqual(try db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete)?.linkedCount, 1)
 
         try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
 
-        // Discrete: goal 2, count 2 → the closed board's record now holds the cell.
+        let endedRow = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(endedRow.countKind, .continuous)
+        XCTAssertEqual(endedRow.maxCount, 2.45)
+        XCTAssertEqual(endedRow.version, endedRowBefore.version)
+        XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .discrete)
         let after = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
-        XCTAssertEqual(after.completedTasks, 1)
-        XCTAssertEqual(after.sealedCompletedCells, [0])
+        XCTAssertEqual(after.completedTasks, 0)
+        XCTAssertEqual(after.sealedCompletedCells, [])
+        XCTAssertEqual(try taskQueueIds(db), ["live", "root"])
+    }
+
+    /// Web twin: "leaves a linked row a sealed board holds only through a
+    /// placed compound untouched (#576 item 2)".
+    func test_switch_leavesALinkedRowHeldOnlyThroughASealedCompoundUntouched() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2)
+        var sub = K.task("sub", maxCount: 2.45, sharedCounterId: "root",
+                         startDate: endedStart, endDate: endedEnd, createdInWizard: true, baseline: 0)
+        sub.countKind = .continuous
+        try db.saveTask(sub)
+        try K.seedCompoundHolder(db, compoundId: "cmp", childId: "sub", boardId: "bSealedCmp",
+                                 startDate: endedStart, endDate: endedEnd, sealedAt: "2026-09-21T09:00:00.000Z")
+        let subBefore = try XCTUnwrap(K.fetchTask(db, "sub"))
+        XCTAssertEqual(try db.previewCounterKindSwitch(rootTaskId: "root", to: .discrete)?.linkedCount, 2)
+
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+
+        let after = try XCTUnwrap(K.fetchTask(db, "sub"))
+        XCTAssertEqual(after.countKind, .continuous)
+        XCTAssertEqual(after.maxCount, 2.45)
+        XCTAssertEqual(after.version, subBefore.version)
+        XCTAssertEqual(try K.fetchTask(db, "live")?.countKind, .discrete)
+    }
+
+    /// Web twin: "Reopen re-aligns a copy the seal froze at the old kind (D5)".
+    func test_reopen_realignsACopyTheSealFrozeAtTheOldKind() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
+        try K.addIncrement(db, taskId: "root", delta: 2.4, occurredAt: "2026-09-16T10:00:00.000Z")
+        var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        ended.sealedAt = "2026-09-21T09:00:00.000Z"
+        ended.sealedCompletedCells = []
+        try db.saveBoard(ended)
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        let frozen = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(frozen.countKind, .continuous)
+        try db.write { try SyncQueueItem.deleteAll($0) }
+
+        try db.reopenBoard(boardId: "bEnded", now: "2026-09-23T12:00:00.000Z")
+
+        // The kind switch's own write, landed now: kind + rounded goal, one authored write.
+        let row = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(row.countKind, .discrete)
+        XCTAssertEqual(row.maxCount, 2)
+        XCTAssertEqual(row.version, frozen.version + 1)
+        XCTAssertEqual(try taskQueueIds(db), ["ended"])
+        // The reopened board re-derives at the aligned kind: 2.4 rounds to 2, goal 2 → done.
+        XCTAssertEqual(try db.fetchBoard(id: "bEnded")?.completedTasks, 1)
+    }
+
+    /// Web twin: "Reopen leaves a copy alone while another sealed board still holds it".
+    func test_reopen_leavesACopyAloneWhileAnotherSealedBoardHoldsIt() throws {
+        let db = try seedFamily(kind: .continuous, rootGoal: 26.2, endedTarget: 2.45)
+        var ended = try XCTUnwrap(db.fetchBoard(id: "bEnded"))
+        ended.sealedAt = "2026-09-21T09:00:00.000Z"
+        ended.sealedCompletedCells = []
+        try db.saveBoard(ended)
+        try K.seedCompoundHolder(db, compoundId: "cmp", childId: "ended", boardId: "bOtherSealed",
+                                 startDate: endedStart, endDate: endedEnd, sealedAt: "2026-09-21T09:00:00.000Z")
+        try db.switchCounterKind(rootTaskId: "root", to: .discrete, now: now)
+        let frozen = try XCTUnwrap(K.fetchTask(db, "ended"))
+
+        try db.reopenBoard(boardId: "bEnded", now: "2026-09-23T12:00:00.000Z")
+
+        let row = try XCTUnwrap(K.fetchTask(db, "ended"))
+        XCTAssertEqual(row.countKind, .continuous)
+        XCTAssertEqual(row.maxCount, 2.45)
+        XCTAssertEqual(row.version, frozen.version)
     }
 
     func test_roundTrip_restoresExactWindowCount() throws {

@@ -210,6 +210,7 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
           currentCount: displayed,
           isCompleted: caches.isCompleted,
           completedAt: caches.completedAt,
+          totalCompletions: caches.totalCompletions,
           updatedAt: now,
           version: m.version + 1,
         };

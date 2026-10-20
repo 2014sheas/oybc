@@ -2,7 +2,7 @@ import { AchievementTrigger, TaskType, countUnitSuffix, counterDisplayName, form
 import { RisoBadge, RisoIcon, RisoSegmented, RisoTypeBadge, type RisoTaskType } from '../../../components/riso';
 import type { TaskDetailData } from '../../../hooks/useTaskDetail';
 import { formatRelativeTime } from '../../../utils/relativeTime';
-import { activityDot, activityWhen, segmentOptions, subtasksHeading, type BoardRow, type DetailSegment } from './taskDetailModel';
+import { activityDot, activityFooter, activityWhen, segmentOptions, subtasksHeading, type BoardRow, type DetailSegment } from './taskDetailModel';
 import styles from './TaskDetail.module.css';
 
 export interface TaskDetailSectionsProps {
@@ -98,7 +98,7 @@ function ActivityCard({ task, data, full, onSegment }: { task: Task; data: TaskD
             </div>
           ))}
           <div className={styles.activityFoot}>
-            {`Completed ${data.activity?.completionCount ?? 0}× all-time${updated ? ` · updated ${updated}` : ''}`}
+            {activityFooter(task.type, data.activity?.completionCount ?? null, updated)}
           </div>
         </>
       ) : (

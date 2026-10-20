@@ -95,7 +95,10 @@ export type RootPropagationCopy = Pick<
   | 'sharedCounterId'
   | 'isDeleted'
 > & {
-  /** Placed on a sealed (closed) board — a permanent record, never rewritten. */
+  /**
+   * Held by a sealed (closed) board — placed there directly or as a sub-task
+   * of a compound placed there — a permanent record, never rewritten.
+   */
   onSealedBoard?: boolean;
 };
 

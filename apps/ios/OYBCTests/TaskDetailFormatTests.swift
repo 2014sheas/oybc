@@ -66,7 +66,13 @@ final class TaskDetailFormatTests: XCTestCase {
         XCTAssertEqual(TaskDetailFormat.activityDate("2026-10-15T08:00:00.000Z", now: now, timeZone: utc), "Oct 15")
         XCTAssertEqual(TaskDetailFormat.activityDate("2025-09-02T08:00:00.000Z", now: now, timeZone: utc), "Sep 2, 2025")
         let updated = "2026-10-15T12:00:00.000Z"
-        XCTAssertEqual(TaskDetailFormat.footer(completions: 3, updatedAt: updated, now: now), "Completed 3× all-time · updated \(RelativeTime.formatRelativeTime(updated, now: now) ?? "")")
+        let rel = RelativeTime.formatRelativeTime(updated, now: now) ?? ""
+        XCTAssertEqual(TaskDetailFormat.footer(type: .normal, completions: 3, updatedAt: updated, now: now), "Completed 3× all-time · updated \(rel)")
+        // Only a Simple task's completions are recorded occurrences (#384).
+        for type in [TaskType.counting, .compound, .achievement] {
+            XCTAssertEqual(TaskDetailFormat.footer(type: type, completions: 0, updatedAt: updated, now: now), "Updated \(rel)")
+            XCTAssertEqual(TaskDetailFormat.footer(type: type, completions: 4, updatedAt: "not a date", now: now), "")
+        }
     }
 
     func testInteractivePopOnlyBeginsWithSomethingToPopTo() {

@@ -97,6 +97,7 @@ extension AppDatabase {
         task.isCompleted = caches.isCompleted
         task.currentCount = caches.currentCount
         task.completedAt = caches.completedAt
+        task.totalCompletions = caches.totalCompletions
         task.updatedAt = now
         task.version = original.version + 1
         try saveTaskAndCascade(db: db, task: task)

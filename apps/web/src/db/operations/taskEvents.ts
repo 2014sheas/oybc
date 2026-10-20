@@ -25,9 +25,9 @@ import { loadPlacementReach } from './placementReach';
  * stamping the lifetime caches ride the SAME transaction so a peer / older
  * surface never sees an event without its cache stamp (or vice versa).
  *
- * `Task.isCompleted` / `currentCount` / `completedAt` are demoted to LIFETIME
- * caches (docs §Task caches): recomputed from the full non-deleted event set,
- * never trusted for anything windowed (grids + derivation read events). The
+ * `Task.isCompleted` / `currentCount` / `completedAt` / `totalCompletions` are
+ * LIFETIME caches (docs §Task caches): recomputed from the full non-deleted
+ * event set, never trusted for anything windowed (grids + derivation read events). The
  * board-grid + derivation-pass windowing lives in the shared kernel
  * (`resolveTaskWindowState` / `computeBoardStatsUpdate`); this module owns the
  * local write + cache side.
@@ -38,6 +38,13 @@ export interface TaskCacheFields {
   isCompleted: boolean;
   currentCount: number | undefined;
   completedAt: string | undefined;
+  /**
+   * How many times a NORMAL task was completed: its non-deleted `completion`
+   * events. Always 0 for COUNTING — its occurrences are increments, and a
+   * completion event left over from a Simple → Counting switch counts nothing
+   * for the new type (issue #384).
+   */
+  totalCompletions: number;
 }
 
 /**
@@ -53,6 +60,8 @@ export interface TaskCacheFields {
  * (low-clamped at 0 — overshoot preserved); `isCompleted` iff sum ≥ maxCount;
  * `completedAt` is the latest increment's `occurredAt` when complete (a
  * deterministic anchor for the library "when completed" display).
+ * `totalCompletions` is the number of live completion events for NORMAL, 0 for
+ * COUNTING.
  *
  * @param task   The event-owning task (caller guarantees `isEventOwningTask`).
  * @param events The task's events (deleted rows ignored internally).
@@ -74,18 +83,18 @@ export function computeTaskCachesFromEvents(
         if (completedAt === undefined || e.occurredAt > completedAt) completedAt = e.occurredAt;
       }
     }
-    return { isCompleted, currentCount: count, completedAt };
+    return { isCompleted, currentCount: count, completedAt, totalCompletions: 0 };
   }
 
   // NORMAL (and defensive non-counting owners).
   let completedAt: string | undefined;
-  let hasCompletion = false;
+  let totalCompletions = 0;
   for (const e of live) {
     if (e.kind !== 'completion') continue;
-    hasCompletion = true;
+    totalCompletions += 1;
     if (completedAt === undefined || e.occurredAt > completedAt) completedAt = e.occurredAt;
   }
-  return { isCompleted: hasCompletion, currentCount: task.currentCount, completedAt };
+  return { isCompleted: totalCompletions > 0, currentCount: task.currentCount, completedAt, totalCompletions };
 }
 
 /**
@@ -107,6 +116,7 @@ export async function stampTaskCachesAuthored(taskId: string, now: string): Prom
     isCompleted: caches.isCompleted,
     currentCount: caches.currentCount,
     completedAt: caches.completedAt,
+    totalCompletions: caches.totalCompletions,
     updatedAt: now,
     version: (task.version ?? 0) + 1,
   });
@@ -132,6 +142,7 @@ export async function recomputeTaskCachesFromPull(taskId: string): Promise<void>
     isCompleted: caches.isCompleted,
     currentCount: caches.currentCount,
     completedAt: caches.completedAt,
+    totalCompletions: caches.totalCompletions,
   });
 }
 

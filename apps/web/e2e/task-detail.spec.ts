@@ -67,7 +67,9 @@ test.describe('Task Detail shell', () => {
     await seg(page, 'Activity').click();
     await expect(page.getByText(/Logged \+1 pages · Week 42/).first()).toBeVisible();
     await expect(page.getByText(/^Placed on Week 42$/)).toBeVisible();
-    await expect(page.getByText(/Completed 0× all-time/)).toBeVisible();
+    // A Counting task's footer carries no completion count (#384).
+    await expect(page.getByText(/^Updated /)).toBeVisible();
+    await expect(page.getByText(/× all-time/)).toHaveCount(0);
   });
 
   test('Normal hero: Mark done ↔ Done with its Undo strip', async ({ page }) => {

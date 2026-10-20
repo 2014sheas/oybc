@@ -96,13 +96,15 @@ extension AppDatabase {
     ///
     /// Writes `countKind = to` (always explicit — the field is never cleared)
     /// plus the `planCountKindSwitch` goal / default-amount rounding on the
-    /// root and on every live row whose `sharedCounterId` is the root, each
-    /// with a version bump + `.update` enqueue. Then the board cascade
-    /// re-derives every board placing a written row (a placement's frozen
-    /// `targetKind` keeps its goal's kind). `task_events` are never touched: a
-    /// whole kind rounds the window SUM at read time, so switching back
-    /// restores the exact fractional count. The root's lifetime caches
-    /// (`isCompleted` / `currentCount` / `completedAt`) are restamped from
+    /// root and on every row `familyRowsToSwitch` returns (live linked rows no
+    /// sealed board holds — a closed board's copy keeps its kind and goal
+    /// until Reopen re-aligns it, the same exclusion as root → copy
+    /// propagation), each with a version bump + `.update` enqueue. Then the board cascade re-derives
+    /// every board placing a written row (a placement's frozen `targetKind`
+    /// keeps its goal's kind). `task_events` are never touched: a whole kind
+    /// rounds the window SUM at read time, so switching back restores the
+    /// exact fractional count. The root's lifetime caches (`isCompleted` /
+    /// `currentCount` / `completedAt` / `totalCompletions`) are restamped from
     /// events in the same write; a linked row's caches are never read (it
     /// resolves from the root's events) and are not written.
     ///
@@ -155,32 +157,112 @@ extension AppDatabase {
         patchedRoot.countKind = to
         let rootEvents = try TaskEvent.filter(Column("taskId") == root.id).fetchAll(db)
         let rootCaches = Self.computeTaskCachesFromEvents(task: patchedRoot, events: rootEvents)
-        try Self.writeKindSwitch(
-            db: db, task: root, to: to, patch: rootPatch, now: nowIso,
-            caches: (rootCaches.isCompleted, rootCaches.currentCount, rootCaches.completedAt)
-        )
+        try Self.writeKindSwitch(db: db, task: root, to: to, patch: rootPatch, now: nowIso, caches: rootCaches)
         var writtenIds = [root.id]
 
-        let family = try Task
-            .filter(Column("sharedCounterId") == root.id)
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        for row in family {
-            guard let rowPatch = planCountKindSwitch(
-                maxCount: row.maxCount,
-                defaultLogAmount: row.defaultLogAmount,
-                from: resolveCountKind(row.countKind),
-                to: to
-            ) else { continue } // already `to` (or a kind that never switches)
+        for (row, rowPatch) in try Self.familyRowsToSwitch(db: db, rootId: root.id, to: to) {
             try Self.writeKindSwitch(db: db, task: row, to: to, patch: rowPatch, now: nowIso, caches: nil)
             writtenIds.append(row.id)
         }
 
         try Self.runBoardCascadeForTasks(db: db, changedTaskIds: writtenIds, now: nowIso)
-        // A linked row's goal may have rounded; one on a CLOSED board re-derives
-        // deterministically (the sanctioned sealed path — the live cascade skips it).
+        // A root placed on a CLOSED board re-derives deterministically (the
+        // sanctioned sealed path — the live cascade skips it). No written copy
+        // is on one: `familyRowsToSwitch` leaves those untouched.
         try Self.reDeriveSealedBoards(db: db, changedTaskIds: Set(writtenIds))
         return writtenIds
+    }
+
+    /// The linked rows a kind switch of `rootId` to `to` writes, each with its
+    /// `planCountKindSwitch` patch: live rows linked to the root whose kind
+    /// actually moves, minus any a sealed board holds — directly or as a
+    /// sub-task of a compound placed there (issue #576 item 2; the exclusion
+    /// `RootFieldPropagation.plan` applies, via the same
+    /// `taskIdsReachingSealedBoards`). Shared by the switch and its preview so
+    /// the confirm's count is exactly the rows written. Twin of the web
+    /// `familyRowsToSwitch`.
+    ///
+    /// - Parameters:
+    ///   - db: An open transaction (read or write).
+    ///   - rootId: The counter root.
+    ///   - to: The requested kind.
+    /// - Returns: The rows to write, in fetch order.
+    /// - Throws: A database error if a read fails.
+    static func familyRowsToSwitch(
+        db: Database, rootId: String, to: CountKind
+    ) throws -> [(row: Task, patch: CountKindSwitchPatch)] {
+        let family = try Task
+            .filter(Column("sharedCounterId") == rootId)
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        var moving: [(row: Task, patch: CountKindSwitchPatch)] = []
+        for row in family {
+            guard let patch = planCountKindSwitch(
+                maxCount: row.maxCount,
+                defaultLogAmount: row.defaultLogAmount,
+                from: resolveCountKind(row.countKind),
+                to: to
+            ) else { continue } // already `to` (or a kind that never switches)
+            moving.append((row: row, patch: patch))
+        }
+        let sealed = try taskIdsReachingSealedBoards(db: db, taskIds: Set(moving.map(\.row.id)))
+        return moving.filter { !sealed.contains($0.row.id) } // a closed board's record
+    }
+
+    /// Reopen's kind re-alignment (docs/COUNTER_KINDS.md D5): a linked row's
+    /// kind mirrors its root's except while a sealed board holds it. When
+    /// Reopen frees `boardId`, every live linked COUNTING row that board
+    /// reaches (directly or through a placed compound) whose kind differs from
+    /// its root's — and that no OTHER sealed board still holds — takes the
+    /// root's kind through `planCountKindSwitch`, as the kind switch would have
+    /// written it: one authored write each (version bump + `.update` enqueue).
+    /// Twin of the web `realignLinkedKindsOnReopen`.
+    ///
+    /// Must run inside Reopen's write, AFTER the seal is cleared. It does not
+    /// cascade: the caller re-derives the boards the returned rows reach.
+    ///
+    /// - Parameters:
+    ///   - db: Reopen's open write transaction.
+    ///   - boardId: The board just reopened.
+    ///   - now: ISO8601 write time.
+    /// - Returns: The ids of the rows re-aligned.
+    /// - Throws: A database error if a read or write fails.
+    static func realignLinkedKindsOnReopen(db: Database, boardId: String, now: String) throws -> [String] {
+        let linked = try Task.filter(Column("isDeleted") == false)
+            .fetchAll(db)
+            .filter { $0.type == .counting && $0.sharedCounterId != nil }
+        guard !linked.isEmpty else { return [] }
+        let rootIds = Array(Set(linked.compactMap(\.sharedCounterId)))
+        let roots = Dictionary(
+            try Task.filter(rootIds.contains(Column("id"))).fetchAll(db)
+                .filter { !$0.isDeleted && $0.type == .counting }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var drifted: [(row: Task, patch: CountKindSwitchPatch, to: CountKind)] = []
+        for row in linked {
+            guard let rootId = row.sharedCounterId, let root = roots[rootId] else { continue }
+            let to = resolveCountKind(root.countKind)
+            guard let patch = planCountKindSwitch(
+                maxCount: row.maxCount,
+                defaultLogAmount: row.defaultLogAmount,
+                from: resolveCountKind(row.countKind),
+                to: to
+            ) else { continue } // already the root's kind
+            drifted.append((row: row, patch: patch, to: to))
+        }
+        guard !drifted.isEmpty else { return [] }
+
+        let reach = try reachedBoardIdsByTask(db: db, taskIds: Set(drifted.map(\.row.id)))
+        let sealed = try liveSealedBoardIds(db: db)
+        var written: [String] = []
+        for entry in drifted {
+            let boards = reach[entry.row.id] ?? []
+            guard boards.contains(boardId), boards.isDisjoint(with: sealed) else { continue }
+            try writeKindSwitch(db: db, task: entry.row, to: entry.to, patch: entry.patch, now: now, caches: nil)
+            written.append(entry.row.id)
+        }
+        return written
     }
 
     /// The ONE "switch if changed, then guard the goal" step every editing
@@ -230,17 +312,8 @@ extension AppDatabase {
         try read { db in
             guard let root = try Task.fetchOne(db, key: rootTaskId), !root.isDeleted,
                   root.type == .counting, root.sharedCounterId == nil else { return nil }
-            let family = try Task
-                .filter(Column("sharedCounterId") == root.id)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
             // Exactly the rows switchCounterKind(db:…) would write.
-            let linkedCount = family.filter { row in
-                planCountKindSwitch(
-                    maxCount: row.maxCount, defaultLogAmount: row.defaultLogAmount,
-                    from: resolveCountKind(row.countKind), to: to
-                ) != nil
-            }.count
+            let linkedCount = try Self.familyRowsToSwitch(db: db, rootId: root.id, to: to).count
             return KindSwitchPreview.planned(task: root, to: to, linkedCount: linkedCount)
         }
     }
@@ -249,13 +322,14 @@ extension AppDatabase {
     /// `.update` enqueue. Runs inside the caller's write transaction.
     private static func writeKindSwitch(
         db: Database, task: Task, to: CountKind, patch: CountKindSwitchPatch, now: String,
-        caches: (isCompleted: Bool, currentCount: CountValue?, completedAt: String?)?
+        caches: TaskCacheFields?
     ) throws {
         var updated = task
         if let caches {
             updated.isCompleted = caches.isCompleted
             updated.currentCount = caches.currentCount
             updated.completedAt = caches.completedAt
+            updated.totalCompletions = caches.totalCompletions
         }
         if let maxCount = patch.maxCount { updated.maxCount = maxCount }
         if let amount = patch.defaultLogAmount { updated.defaultLogAmount = amount }
