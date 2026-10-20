@@ -138,7 +138,7 @@ enum SyncRetry {
 extension SyncQueueItem {
     /// Check if item is stale (created more than 24 hours ago)
     var isStale: Bool {
-        guard let createdDate = ISO8601DateFormatter().date(from: createdAt) else {
+        guard let createdDate = AppDatabase.parseISO8601(createdAt) else {
             return false
         }
         let dayAgo = Date().addingTimeInterval(-24 * 60 * 60)

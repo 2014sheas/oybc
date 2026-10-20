@@ -10,47 +10,18 @@ import Foundation
 
 // MARK: - ISO8601 Date Parsing
 
-/// Cached formatters for `parseISO8601Date` to avoid repeated allocations.
-private let _isoFractionalFormatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
-private let _isoBasicFormatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime]
-    return f
-}()
-private let _localFractionalFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone.current
-    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
-    return f
-}()
-private let _localBasicFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = TimeZone.current
-    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-    return f
-}()
-
 /// Parses an ISO8601 date string with or without fractional seconds.
 ///
 /// Tries fractional seconds first (e.g., `"2026-03-15T00:00:00.000Z"`),
 /// then falls back to seconds-only (e.g., `"2026-03-15T00:00:00Z"`), then to
-/// timezone-less local ISO strings produced by web's `toLocalISO`.
+/// timezone-less local ISO strings produced by web's `toLocalISO`. Forwards to
+/// `DateFormatting.parseISO(_:)` - the one parse entry point, with the canonical-shape
+/// fast path (#570).
 ///
 /// - Parameter string: An ISO8601-formatted date string.
 /// - Returns: The parsed `Date`, or `nil` if the string is not valid ISO8601.
 func parseISO8601Date(_ string: String) -> Date? {
-    // Try ISO8601 with timezone + fractional seconds first (e.g., "...000Z")
-    if let d = _isoFractionalFormatter.date(from: string) { return d }
-    if let d = _isoBasicFormatter.date(from: string) { return d }
-    // Fall back to local ISO strings without timezone (from toLocalISO on web)
-    if let d = _localFractionalFormatter.date(from: string) { return d }
-    return _localBasicFormatter.date(from: string)
+    DateFormatting.parseISO(string)
 }
 
 // MARK: - Timeframe Label Formatting

@@ -258,9 +258,12 @@ extension AppDatabase {
         return isoFormatter.string(from: Date())
     }
 
-    /// Parse an ISO8601 string back to a `Date` (or nil). Used by the
-    /// sync-pull validators.
+    /// Parse an ISO8601 string back to a `Date` (or nil). Accepts exactly what
+    /// `currentTimestamp()` writes (`...Z`, whole seconds) via the fast path,
+    /// then the default-options formatter for any other zoned shape - fractional
+    /// seconds stay rejected, as before.
     static func parseISO8601(_ s: String) -> Date? {
+        if let d = ISO8601FastParser.parse(s, accepting: .utcWholeSeconds) { return d }
         return isoFormatter.date(from: s)
     }
 
