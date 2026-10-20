@@ -43,8 +43,14 @@ extension BoardPlayView {
                 },
                 onNewBoard: {
                     withAnimation(.easeOut(duration: 0.25)) { moment = nil }
-                    // In a tutorial lesson "Start a new board" closes the lesson instead.
-                    if let tutorialCoach { tutorialCoach.handle(.greenlogMomentClosed) } else { MomentIntent.startNewBoard() }
+                    // In a tutorial lesson the moment's buttons all mean "this
+                    // moment closed": the Greenlog's completes the lesson, the
+                    // Bingo's goes on to the finale — never a real new board.
+                    if let tutorialCoach {
+                        tutorialCoach.handle(m.kind == .bingo ? .bingoMomentClosed : .greenlogMomentClosed)
+                    } else {
+                        MomentIntent.startNewBoard()
+                    }
                 }
             )
             // The field bleeds edge to edge on its own (`field.ignoresSafeArea()`

@@ -110,6 +110,10 @@ extension BoardPlayView {
                 .presentationBackground(Color.risoPaper)
                 .presentationCornerRadius(12)
                 .tutorialCoachLayer()
+                // While the lesson lights the sheet it closes only through the
+                // lesson; a sheet opened from a lit square (the finale's Read)
+                // keeps its swipe-down, since nothing on it is scripted.
+                .interactiveDismissDisabled(tutorialCoach?.session?.screenStep?.onSheet == true)
                 .modifier(TutorialSheetCloser())
         }
     }
@@ -234,15 +238,20 @@ extension BoardPlayView {
 // MARK: - Getting Started hooks
 
 /// Closes the square sheet when the running lesson's step asks for it (the
-/// lesson-3 hold-menu step follows the sheet's Undo-strip step). Inert outside
-/// a lesson.
+/// lesson-3 hold-menu step follows the sheet's Undo-strip step) or when a
+/// Bingo / Greenlog moment opens behind it (a finale log from the sheet).
+/// Inert outside a lesson.
 struct TutorialSheetCloser: ViewModifier {
     @Environment(\.tutorialSignals) private var signals
     @Environment(\.dismiss) private var dismiss
 
     func body(content: Content) -> some View {
-        content.onChange(of: signals.closesSquareSheet) { _, closes in
-            if closes { dismiss() }
-        }
+        content
+            .onChange(of: signals.closesSquareSheet) { _, closes in
+                if closes { dismiss() }
+            }
+            .onChange(of: signals.momentOpen) { _, open in
+                if open { dismiss() }
+            }
     }
 }

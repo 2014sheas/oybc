@@ -415,6 +415,7 @@ struct BoardWizardTasksStepView: View {
                             defaultEndDate: currentEndDate,
                             onTaskCreated: { taskId, title, type in
                                 onTaskCreated(taskId, title, type)
+                                tutorialCoach?.handle(.manualTaskAdded)
                             },
                             onPendingCreated: onPendingCreated,
                             onLibraryReloadRequested: onLibraryReloadRequested,
@@ -430,6 +431,7 @@ struct BoardWizardTasksStepView: View {
                             selectedIds: selectedTaskIds,
                             onExistingTaskPicked: { task in
                                 toggleSelection(task.id)
+                                tutorialCoach?.handle(.manualTaskAdded)
                             },
                             linksCounterPicks: !isRecurring,
                             onCounterGoalPicked: { root, goal, typed in
@@ -440,10 +442,12 @@ struct BoardWizardTasksStepView: View {
                     .padding(12)
                     .risoCard(fill: .risoPaper2)
                     .risoHardShadow(Riso.Shadow.small)
+                    .tutorialAnchor(.wizardQuickAdd)
 
                     // Special-type panel — pass effectiveAllTasks so the
                     // inline compound builder can autocomplete against live
-                    // + pending tasks without a separate GRDB fetch.
+                    // + pending tasks without a separate GRDB fetch. A lesson
+                    // adds a plain task by hand, so the panel dims there.
                     RisoSpecialTaskPanel(
                         userId: userId,
                         defaultTimeframe: currentTimeframe,
@@ -460,8 +464,8 @@ struct BoardWizardTasksStepView: View {
                         onPendingCreated: onPendingCreated,
                         onLibraryReloadRequested: onLibraryReloadRequested
                     )
+                    .tutorialDimmed(tutorialSignals.sandboxed)
                 }
-                .tutorialDimmed(tutorialSignals.sandboxed)
 
                 // 3. Add from a pool or board (Board Sources P2, frame 2a) —
                 // dashed row styled like the library row; opens the sheet.
@@ -540,6 +544,13 @@ struct BoardWizardTasksStepView: View {
                 guard let id = newValue else { return }
                 withAnimation { proxy.scrollTo(id, anchor: .top) }
             }
+            // A lesson's expanded pool scrolls to the top so its member rows
+            // (the next step's spotlight) are on screen — the scrim swallows
+            // scroll drags outside the lit controls.
+            .onChange(of: expandedSourceIds) { before, after in
+                guard tutorialSignals.active, let id = after.subtracting(before).first else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .top) }
+            }
         }
         .background(RisoPaperBackground())
         .safeAreaInset(edge: .bottom) {
@@ -588,7 +599,8 @@ struct BoardWizardTasksStepView: View {
                     } else {
                         onPullBoardSource(boardId)
                     }
-                }
+                },
+                singlePick: tutorialSignals.sandboxed
             )
         }
         // The remove-source confirm (owner ruling 2026-09-19). A native
@@ -748,6 +760,7 @@ struct BoardWizardTasksStepView: View {
                     onSetPartTarget: { onSetPartTarget(source.sourceId, $0, $1, $2) },
                     onSetPartVary: { onSetPartVary(source.sourceId, $0, $1, $2) }
                 )
+                .id(source.sourceId)
             }
         )
     }

@@ -125,6 +125,13 @@ final class TutorialSnapshotTests: XCTestCase {
         )), height: 170)
     }
 
+    func testCoachMarkDoneLineLight() {
+        snap(markView(TutorialCoachMark(
+            lessonTitle: "Create a board", text: "Fitness fills eight squares.",
+            step: 4, stepCount: 12, showsNext: true, done: true, notch: .none
+        )), height: 170)
+    }
+
     func testCoachMarkLongTitleAndTextDark() {
         snap(markView(TutorialCoachMark(
             lessonTitle: "Complete a board and finish the whole tutorial lesson",

@@ -25,8 +25,12 @@ struct RisoSourcePickerSheetView: View {
     let pulledSourceIds: Set<String>
     let onTogglePool: (Pool) -> Void
     let onToggleBoard: (String) -> Void
+    /// One pool at a time (a lesson): once a pool is pulled, the other rows
+    /// dim and ignore taps until it is un-pulled.
+    var singlePick: Bool = false
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.tutorialSignals) private var tutorialSignals
     @State private var query: String = ""
 
     private var trimmedQuery: String {
@@ -82,6 +86,7 @@ struct RisoSourcePickerSheetView: View {
         .padding(.horizontal, 20)
         .background(Color.risoPaper.ignoresSafeArea())
         .tutorialCoachLayer()
+        .interactiveDismissDisabled(tutorialSignals.active)
         .presentationDetents([.fraction(0.76)])
     }
 
@@ -147,14 +152,17 @@ struct RisoSourcePickerSheetView: View {
     // MARK: - Rows
 
     private func poolRow(_ pool: Pool) -> some View {
-        sourceRow(
+        let isOn = pulledSourceIds.contains(pool.id)
+        let lockedOut = singlePick && !isOn && !pulledSourceIds.isEmpty
+        return sourceRow(
             letter: "P",
             letterFill: .risoInk,
             letterForeground: .risoPaper,
             name: pool.name,
             subtitle: "\(pool.taskIds.count) task\(pool.taskIds.count == 1 ? "" : "s")",
-            isOn: pulledSourceIds.contains(pool.id)
+            isOn: isOn
         ) { onTogglePool(pool) }
+        .tutorialDimmed(lockedOut)
     }
 
     private func boardRow(_ entry: BoardEntry) -> some View {
