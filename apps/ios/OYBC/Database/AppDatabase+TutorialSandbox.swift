@@ -111,32 +111,33 @@ extension AppDatabase {
 
     /// The Sample week grid, row-major, with what is done at the start.
     ///
-    /// Deviation from the handoff's literal order (Stretch · Read · Call mom /
-    /// Water plants · Walk · Tidy desk / Journal · Cook dinner · No sugar):
-    /// with that layout, finishing Stretch and Read already completes the top
-    /// row, so the first Bingo would fire at step 6 instead of step 9 (when
-    /// Tidy desk is meant to close the first line). No layout with Tidy desk on
-    /// an edge cell can avoid it, so four titles move: Tidy desk takes the top
-    /// right corner (closing the top row and right column together), No sugar
-    /// the centre, Call mom the middle right and Walk 10k steps the bottom
-    /// right. The four pre-done squares and every title are unchanged.
+    /// Deviation from the handoff's literal grid (Stretch · Read · Call mom ✓ /
+    /// Water plants ✓ · Walk ✓ · Tidy desk / Journal · Cook dinner ✓ · No sugar),
+    /// owner decision 2026-10-20: the Bingo at step 9 must be ONE line. With
+    /// four squares pre-done, seven of nine are done once Tidy desk lands, and
+    /// two undone cells can block at most six of the eight lines, so two lines
+    /// always close together; the literal grid also closes the top row at step
+    /// 6. So Call mom starts undone (three pre-done, not four) and swaps places
+    /// with Read 20 pages. Everything else is the handoff's: Tidy desk closes
+    /// the middle row (Water plants · Walk · Tidy desk) and nothing else, and
+    /// the finale is three squares (Call mom · Journal · No sugar).
     static let tutorialSampleWeekGrid: [TutorialSampleSquare] = [
         .init(title: "Stretch", kind: .normal, done: false),
+        .init(title: "Call mom", kind: .normal, done: false),
         .init(title: "Read 20 pages", kind: .counting(action: "Read", unit: "pages", goal: 20, current: 12), done: false),
-        .init(title: "Tidy desk", kind: .normal, done: false),
         .init(title: "Water plants", kind: .normal, done: true),
-        .init(title: "No sugar", kind: .normal, done: false),
-        .init(title: "Call mom", kind: .normal, done: true),
+        .init(title: "Walk 10k steps", kind: .counting(action: "Walk", unit: "k steps", goal: 10, current: 10), done: true),
+        .init(title: "Tidy desk", kind: .normal, done: false),
         .init(title: "Journal", kind: .normal, done: false),
         .init(title: "Cook dinner", kind: .normal, done: true),
-        .init(title: "Walk 10k steps", kind: .counting(action: "Walk", unit: "k steps", goal: 10, current: 10), done: true),
+        .init(title: "No sugar", kind: .normal, done: false),
     ]
 
     /// Library tasks the Edit swap picker can offer in place of "Journal".
     static let tutorialSpareTitles = ["Meditate 10 min", "Drink water", "Go for a walk"]
 
     /// Seeds the sample board, its nine tasks, the in-window events that make
-    /// four squares done, a few spare library tasks, and re-derives the
+    /// three squares done, a few spare library tasks, and re-derives the
     /// board's denormalized stats. Returns the board id.
     private func seedTutorialSampleWeek(userId: String, weekStartDay: String, resumeStep: Int, now: Date) throws -> String {
         let ts = Self.tutorialTimestamp(now)

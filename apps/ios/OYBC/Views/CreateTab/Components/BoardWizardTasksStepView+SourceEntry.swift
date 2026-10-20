@@ -45,9 +45,14 @@ extension BoardWizardTasksStepView {
 
     /// The tutorial's hook for the sources sheet closing: when a pulled pool now
     /// fills the board, report its line ("Fitness fills eight squares") and let
-    /// the lesson move on. Inert outside a lesson.
+    /// the lesson move on; closed with nothing filling it, the lesson lights the
+    /// entry row again. Inert outside a lesson.
     func tutorialSourceSheetClosed() {
-        guard isCountSatisfied, let coach = tutorialCoach else { return }
+        guard let coach = tutorialCoach else { return }
+        guard isCountSatisfied else {
+            coach.handle(.sourcesSheetClosedEmpty)
+            return
+        }
         let name = sources.compactMap { supplyInfoBySourceId[$0.sourceId]?.displayName }.first ?? "This pool"
         coach.reportPool(summary: "\(name) fills \(Self.spelledCount(tasksRequired)) squares")
         coach.handle(.poolsPicked)

@@ -119,6 +119,7 @@ extension BoardPlayView {
     func drainSquareSheetHandOffs() {
         squareLogStrip = nil
         squareSheetEntry = nil
+        tutorialCoach?.handle(.squareSheetClosed) // a lesson lighting the sheet steps back
         if let id = pendingTaskDetailTaskId {
             pendingTaskDetailTaskId = nil
             taskDetailSheetTaskId = TaskIdItem(id: id)
@@ -214,8 +215,10 @@ extension BoardPlayView {
         if squareLogStrip != nil, let before { reportTutorialLog(before: before, amount: amount) }
     }
 
-    /// Getting Started: tells the lesson what the log produced ("22 of 20") and
-    /// that a chip was used. Inert outside a lesson.
+    /// Getting Started: tells the lesson what the log produced ("22 of 20", or
+    /// "13 of 20" when the chip did not finish the square) and that a chip was
+    /// used — any chip moves the lesson on, as the handoff scripts it; a square
+    /// left short is lit again by the finale. Inert outside a lesson.
     private func reportTutorialLog(before: SquareSheetContent.ChildCount, amount: CountValue) {
         guard let coach = tutorialCoach else { return }
         let after = before.current + amount
@@ -223,9 +226,7 @@ extension BoardPlayView {
             summary: "\(formatCount(after, kind: before.kind)) of \(formatCount(before.goal, kind: before.kind))",
             finishedSquare: before.goal > 0 && after >= before.goal
         )
-        // Only a log that finishes the square moves the lesson on; a smaller
-        // chip keeps the step so the square can be finished.
-        if after >= before.goal, before.goal > 0 { coach.handle(.countLogged) }
+        coach.handle(.countLogged)
     }
 }
 

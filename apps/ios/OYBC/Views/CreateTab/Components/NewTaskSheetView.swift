@@ -125,6 +125,7 @@ struct NewTaskSheetContentView: View {
     var submitLabel: String = "Add to board ✦"
 
     @Environment(\.tutorialCoach) private var tutorialCoach
+    @Environment(\.tutorialSignals) private var tutorialSignals
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -146,7 +147,9 @@ struct NewTaskSheetContentView: View {
                         },
                         onPendingCreated: nil,
                         onLibraryReloadRequested: onLibraryReloadRequested,
-                        presetCountsTowardCounterId: presetCountsTowardCounterId
+                        presetCountsTowardCounterId: presetCountsTowardCounterId,
+                        // Lesson 1 opens this sheet with the keyboard up ("Type a task").
+                        autoFocus: tutorialSignals.active
                     )
                 }
                 .padding(12)

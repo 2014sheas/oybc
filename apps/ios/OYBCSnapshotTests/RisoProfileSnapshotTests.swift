@@ -99,10 +99,10 @@ final class RisoProfileSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - Tutorial complete (isComplete == true — no row, no hero)
+    // MARK: - Tutorial complete (9/9 — the row stays, captioned "Greenlog", for replay)
 
     func testTutorialCompleteLight() {
-        let view = composedProfileHome(gettingStarted: .hidden)
+        let view = composedProfileHome(tutorialDone: 9, caption: "Greenlog")
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 560)),
@@ -111,7 +111,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
     }
 
     func testTutorialCompleteDark() {
-        let view = composedProfileHome(gettingStarted: .hidden)
+        let view = composedProfileHome(tutorialDone: 9, caption: "Greenlog")
         assertSnapshot(
             of: view,
             as: .image(
@@ -128,7 +128,6 @@ final class RisoProfileSnapshotTests: XCTestCase {
         let view = composedProfileHome(
             boardSummary: .init(defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "No repeating boards yet"),
             streak: nil,
-            gettingStarted: .hidden,
             counters: [],
             totalCounterCount: 0
         )
@@ -143,7 +142,6 @@ final class RisoProfileSnapshotTests: XCTestCase {
         let view = composedProfileHome(
             boardSummary: .init(defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "No repeating boards yet"),
             streak: nil,
-            gettingStarted: .hidden,
             counters: [],
             totalCounterCount: 0
         )
@@ -184,7 +182,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
         streak: ProfileHomeViewModel.StreakStats? = .init(bingoStreak: 12, longestStreak: 24, greenlogCount: 37),
         gettingStarted: ProfileHomeViewModel.GettingStartedDisplay = .row,
         tutorialDone: Int = 3,
-        nextLessonTitle: String? = "Score a bingo",
+        caption: String = "Next: Complete a board",
         counters: [SharedCounterGroup]? = nil,
         totalCounterCount: Int = 3
     ) -> some View {
@@ -215,7 +213,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
                             RisoProfileRow(
                                 icon: "checkmark.circle",
                                 label: "Getting started",
-                                caption: nextLessonTitle.map { "Next: \($0)" },
+                                caption: caption,
                                 value: "\(tutorialDone)/\(TutorialLessonID.total)",
                                 chevron: true
                             )

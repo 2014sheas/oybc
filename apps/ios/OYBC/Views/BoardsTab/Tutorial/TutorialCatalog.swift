@@ -63,6 +63,11 @@ enum TutorialEvent: Equatable {
     case countLogged
     case bingoMomentClosed
     case greenlogMomentClosed
+    // Retreats — a lit sheet was dismissed before its step's action
+    /// The sources sheet closed with no pool filling the board.
+    case sourcesSheetClosedEmpty
+    /// The square sheet closed (swipe-down or any hand-off).
+    case squareSheetClosed
 }
 
 // MARK: - Steps
@@ -209,10 +214,11 @@ enum TutorialCatalog {
     /// `AppDatabase.tutorialSampleWeekGrid`).
     enum SampleSlot {
         static let stretch = 0
-        static let read = 1
-        static let tidy = 2
-        static let noSugar = 4
+        static let callMom = 1
+        static let read = 2
+        static let tidy = 5
         static let journal = 6
+        static let noSugar = 8
     }
 
     /// Lesson 3 · Complete a board — the sandbox "Sample week".
@@ -226,8 +232,28 @@ enum TutorialCatalog {
         TutorialStep(anchors: [.undoStrip], text: "22 of 20. The square is done; Undo stays here.", advance: .next, onSheet: true, dynamic: .loggedSummary),
         TutorialStep(anchors: [.square(SampleSlot.tidy)], text: "Hold a square for quick actions.", advance: .next, closesSquareSheet: true),
         TutorialStep(anchors: [.square(SampleSlot.tidy)], text: "Complete this square to finish the row.", advance: .action(.bingoMomentClosed)),
-        TutorialStep(anchors: [.square(SampleSlot.journal), .square(SampleSlot.noSugar)], text: "Two left. Complete them for a Greenlog.", advance: .action(.greenlogMomentClosed), litsIncompleteSquares: true, dynamic: .remainingSquares),
+        TutorialStep(anchors: [.square(SampleSlot.callMom), .square(SampleSlot.journal), .square(SampleSlot.noSugar)], text: "Three left. Complete them for a Greenlog.", advance: .action(.greenlogMomentClosed), litsIncompleteSquares: true, dynamic: .remainingSquares),
     ]
+
+    // MARK: Retreats (a lit sheet closed early)
+
+    /// Where a lesson goes when a presentation its step lit is dismissed before
+    /// the step's action happened — the swipe-down of a sheet the scrim cannot
+    /// stop. The lesson steps back to the control that reopens the sheet, or on
+    /// a read-only sheet step, straight on to the step that would have closed
+    /// it. Returns nil when the event means nothing at this step.
+    static func retreat(lesson: TutorialLessonID, step: Int, event: TutorialEvent) -> Int? {
+        switch (lesson, event) {
+        case (.createBoard, .sourcesSheetClosedEmpty) where step == 4:
+            return 3                                // light "Add from a pool or board" again
+        case (.completeBoard, .squareSheetClosed) where step == 5:
+            return 4                                // light Read again
+        case (.completeBoard, .squareSheetClosed) where step == 6:
+            return 7                                // the sheet is already gone: hold Tidy desk
+        default:
+            return nil
+        }
+    }
 }
 
 // MARK: - Copy helpers
@@ -246,8 +272,13 @@ extension TutorialProgress {
     }
 }
 
-/// The Profile "Getting started" row's "Next: {title}" caption — the title of
-/// the first lesson not yet done (free row first), nil once all nine are done.
-func nextIncompleteLessonTitle(progress: TutorialProgress) -> String? {
-    progress.nextLesson.map { TutorialCatalog.info(for: $0).title }
+/// The Profile "Getting started" row's caption. The row stays on Profile for
+/// good (owner decision 2026-10-20: the walkthrough is always there to replay),
+/// so after the free row it carries the board's own status line ("Bingo ·
+/// middle row", then "Greenlog") instead of pointing at a locked Pro lesson;
+/// before that, "Next: {the first free lesson not yet done}".
+func gettingStartedCaption(progress: TutorialProgress) -> String {
+    if progress.middleRowDone { return progress.statusLine(activeLesson: nil, activeStep: nil) }
+    let next = TutorialLessonID.middleRow.first { progress.state(of: $0) != .done } ?? .createTask
+    return "Next: \(TutorialCatalog.info(for: next).title)"
 }

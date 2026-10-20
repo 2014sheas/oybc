@@ -11,7 +11,7 @@ import SwiftUI
 /// 1. Identity header (avatar/name/email + trailing gear → Settings).
 /// 2. Day-one hero (`completedCount == 0`) — ABOVE the tiles, replaces the row.
 /// 3. Two tiles — Board settings / Streak (or its empty "no bingo yet" state).
-/// 4. Getting Started row (`0 < completedCount < 8`) — BELOW the tiles.
+/// 4. Getting Started row (`completedCount > 0`, kept for replay) — BELOW the tiles.
 /// 5. Shared counters — up to 2 most-recently-logged counters + "All N ›";
 ///    "+ Log" raises the hub's "Logged +N · Undo" toast (bottom overlay).
 ///
@@ -78,14 +78,7 @@ struct ProfileView: View {
     }
 
     private var gettingStartedDisplay: ProfileHomeViewModel.GettingStartedDisplay {
-        ProfileHomeViewModel.gettingStartedDisplay(
-            completedCount: tutorial.progress.doneCount,
-            isComplete: tutorial.progress.isComplete
-        )
-    }
-
-    private var nextLessonTitle: String? {
-        nextIncompleteLessonTitle(progress: tutorial.progress)
+        ProfileHomeViewModel.gettingStartedDisplay(completedCount: tutorial.progress.doneCount)
     }
 
     // MARK: - Body
@@ -268,14 +261,14 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Getting started row (0 < completedCount < 9)
+    // MARK: - Getting started row (completedCount > 0, kept for replay)
 
     private var gettingStartedRow: some View {
         Button { onOpenTutorial?() } label: {
             RisoProfileRow(
                 icon: "checkmark.circle",
                 label: "Getting started",
-                caption: nextLessonTitle.map { "Next: \($0)" },
+                caption: gettingStartedCaption(progress: tutorial.progress),
                 value: "\(tutorial.progress.doneCount)/\(TutorialLessonID.total)",
                 chevron: true
             )

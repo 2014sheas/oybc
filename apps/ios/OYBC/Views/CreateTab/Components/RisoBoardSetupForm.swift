@@ -38,6 +38,7 @@ struct RisoBoardSetupForm: View {
 
     @Bindable var controller: BoardWizardViewModel
     @Environment(\.tutorialCoach) private var tutorialCoach
+    @Environment(\.tutorialSignals) private var tutorialSignals
 
     // Local state mirrors for custom DatePicker <-> ISO string bridge.
     @State private var customStartAsDate: Date = Date()
@@ -382,7 +383,9 @@ struct RisoBoardSetupForm: View {
             // Board Creation Split (iOS PR A) — extracted to the reusable
             // `RisoBoardSizeCards` component (`Views/Components/`) so it's
             // shared, not re-implemented per surface.
-            RisoBoardSizeCards(selectedSize: controller.size) { n in
+            // In the Getting Started lesson only 3×3 can be picked: the
+            // supplied pools (9 / 6 / 8 tasks) fill a 3×3, never a 5×5.
+            RisoBoardSizeCards(selectedSize: controller.size, enabledSizes: tutorialSignals.sandboxed ? [3] : nil) { n in
                 controller.updateSize(n)
                 tutorialCoach?.handle(.boardSizePicked)
             }

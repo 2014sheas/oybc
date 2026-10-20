@@ -257,7 +257,10 @@ final class TutorialCoordinator: ObservableObject {
     }
 
     /// An action step's event from a real control. Advances when it is the one
-    /// the current step waits for.
+    /// the current step waits for; a moment closing also satisfies a LATER step
+    /// that waits for it (the board got ahead of the script — Tidy desk marked
+    /// done from the hold menu, or the board finished before the Bingo beat);
+    /// a lit sheet closing early steps back to the control that reopens it.
     func handle(_ event: TutorialEvent) {
         guard var current = session, current.phase == .running, !isClosing else { return }
         // A moment closing always un-hides the coach layer, whatever the step.
@@ -268,12 +271,16 @@ final class TutorialCoordinator: ObservableObject {
         guard let step = current.currentStep else { return }
         if step.advance == .action(event) {
             advance()
-        } else if event == .greenlogMomentClosed, step.advance == .action(.bingoMomentClosed) {
-            // The board finished before the Bingo beat was seen (squares done
-            // out of order): the Greenlog closes the lesson.
-            current.step = current.steps.count - 1
+        } else if event == .bingoMomentClosed || event == .greenlogMomentClosed,
+                  let later = current.steps.indices.dropFirst(current.step + 1).first(where: { current.steps[$0].advance == .action(event) }) {
+            current.step = later
             session = current
             advance()
+        } else if let back = TutorialCatalog.retreat(lesson: current.lesson, step: current.step, event: event) {
+            current.step = back
+            current.resumed = false
+            session = current
+            recordStep(current.lesson, step: back)
         }
     }
 

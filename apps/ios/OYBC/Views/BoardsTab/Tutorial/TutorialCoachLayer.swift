@@ -65,6 +65,27 @@ enum TutorialCoachGeometry {
         return !(roomAbove >= markEstimate)
     }
 
+    /// Whether a mark fits either above or below `target`.
+    static func fits(target: CGRect, containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat) -> Bool {
+        containerHeight - bottomReserve - target.maxY - markGap >= markEstimate
+            || target.minY - topReserve - markGap >= markEstimate
+    }
+
+    /// The rect the mark is placed against: the union of every lit control,
+    /// unless that union leaves no room above or below (a step that lights a
+    /// control at the top and one at the bottom of the screen — Timeframe and
+    /// Next, the pool rows and Done), in which case the first control alone.
+    static func placementTarget(
+        lit: [CGRect], containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat
+    ) -> CGRect {
+        guard let first = lit.first else { return .zero }
+        let union = lit.dropFirst().reduce(first) { $0.union($1) }
+        if fits(target: union, containerHeight: containerHeight, bottomReserve: bottomReserve, topReserve: topReserve) {
+            return union
+        }
+        return first
+    }
+
     /// Offset of the notch's centre from the card's leading edge, kept clear of
     /// the card's rounded corners.
     static func notchOffset(targetMidX: CGFloat, containerWidth: CGFloat) -> CGFloat {
@@ -181,8 +202,11 @@ struct TutorialCoachOverlay: View {
             let rect = item.rect.insetBy(dx: -outset, dy: -outset)
             return (rect, min(item.radius + outset, min(rect.width, rect.height) / 2))
         }
-        // The mark clears the WHOLE lit area, not just its first control.
-        let target = lit.dropFirst().reduce(lit[0].rect) { $0.union($1.rect) }
+        // The mark clears the WHOLE lit area when it can, else its first control.
+        let target = TutorialCoachGeometry.placementTarget(
+            lit: lit.map(\.rect), containerHeight: geo.size.height,
+            bottomReserve: keyboardHeight, topReserve: geo.safeAreaInsets.top
+        )
         let below = TutorialCoachGeometry.placesBelow(
             target: target, containerHeight: geo.size.height,
             bottomReserve: keyboardHeight, topReserve: geo.safeAreaInsets.top,

@@ -375,11 +375,11 @@ final class TutorialCoordinatorTests: XCTestCase {
         coach.next(); coach.next()
         coach.handle(.bingoMomentClosed)
         XCTAssertEqual(coach.session?.step, 9)
-        XCTAssertEqual(coach.currentText, "Two left. Complete them for a Greenlog.", "static fallback before the board reports")
-        coach.reportIncomplete(slots: [1, 4, 6])
-        XCTAssertEqual(coach.session?.litAnchors, [.square(1), .square(4), .square(6)], "a square the user undid is lit too")
-        XCTAssertEqual(coach.currentText, "Three left. Complete them for a Greenlog.")
-        coach.reportIncomplete(slots: [4, 6])
+        XCTAssertEqual(coach.currentText, "Three left. Complete them for a Greenlog.", "static fallback before the board reports")
+        coach.reportIncomplete(slots: [0, 1, 6, 8])
+        XCTAssertEqual(coach.session?.litAnchors, [.square(0), .square(1), .square(6), .square(8)], "a square the user undid is lit too")
+        XCTAssertEqual(coach.currentText, "Four left. Complete them for a Greenlog.")
+        coach.reportIncomplete(slots: [1, 6])
         XCTAssertEqual(coach.currentText, "Two left. Complete them for a Greenlog.")
         coach.reportIncomplete(slots: [6])
         XCTAssertEqual(coach.currentText, "One left. Complete it for a Greenlog.")
@@ -408,18 +408,77 @@ final class TutorialCoordinatorTests: XCTestCase {
         // Undo Read (the sheet's Undo strip) and Stretch (the toast's Undo).
         vm.handleCountingDecrement(boardTask: readBT, task: try placement("Read 20 pages").1, amount: 10, persistAsDefault: false); settle()
         vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
-        wait { vm.tutorialIncompleteSlots().count >= 4 }
+        wait { vm.tutorialIncompleteSlots().count >= 5 }
         let slots = vm.tutorialIncompleteSlots()
-        XCTAssertEqual(Set(slots), [TutorialCatalog.SampleSlot.stretch, TutorialCatalog.SampleSlot.read, TutorialCatalog.SampleSlot.journal, TutorialCatalog.SampleSlot.noSugar])
+        XCTAssertEqual(Set(slots), [
+            TutorialCatalog.SampleSlot.stretch, TutorialCatalog.SampleSlot.read, TutorialCatalog.SampleSlot.callMom,
+            TutorialCatalog.SampleSlot.journal, TutorialCatalog.SampleSlot.noSugar,
+        ])
 
         // The finale lights all of them; finishing every one reaches the Greenlog.
         vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
         vm.handleCountingTap(boardTask: readBT, task: try placement("Read 20 pages").1, amount: 8, persistAsDefault: false); settle()
+        vm.handleNormalTap(boardTask: try placement("Call mom").0); settle()
         vm.handleNormalTap(boardTask: try placement("Journal").0); settle()
         vm.handleNormalTap(boardTask: try placement("No sugar").0); settle()
         XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: boardId)).completedTasks, 9)
         XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: boardId)).status, .completed)
         wait { vm.tutorialIncompleteSlots().isEmpty }
         XCTAssertTrue(vm.tutorialIncompleteSlots().isEmpty)
+    }
+
+    // MARK: - The board gets ahead of the script
+
+    /// Tidy desk marked done from the hold menu on the read-only "Hold a square"
+    /// step: the Bingo moment closes before step 9 waits for it, so the lesson
+    /// jumps past step 9 to the finale instead of asking for a done square.
+    func test_bingoClosingOnTheHoldStepSkipsTheCompleteTidyDeskStep() throws {
+        let (coach, _) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.completeBoard))
+        for event: TutorialEvent in [.editEntered, .editSaved, .simpleSquareDone] { coach.handle(event) }
+        coach.next()
+        coach.handle(.countingSheetOpened)
+        coach.handle(.countLogged)
+        coach.next()
+        XCTAssertEqual(coach.session?.step, 7, "the hold-menu step")
+        coach.handle(.bingoMomentClosed)
+        XCTAssertEqual(coach.session?.step, 9, "straight to the finale")
+        XCTAssertEqual(coach.session?.phase, .running)
+    }
+
+    // MARK: - A lit sheet closed early steps back
+
+    func test_sourcesSheetClosedWithoutAPoolLightsTheEntryRowAgain() throws {
+        let (coach, real) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.createBoard))
+        for event in Self.createBoardScript.prefix(4) { coach.handle(event) }
+        XCTAssertEqual(coach.session?.step, 4, "the pool rows")
+        coach.handle(.sourcesSheetClosedEmpty)
+        XCTAssertEqual(coach.session?.step, 3, "back to Add from a pool or board")
+        XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 4), "the saved place is never lowered")
+        coach.handle(.sourcesSheetOpened)
+        coach.reportPool(summary: "Fitness fills eight squares")
+        coach.handle(.poolsPicked)
+        XCTAssertEqual(coach.session?.step, 5)
+        coach.handle(.sourcesSheetClosedEmpty)
+        XCTAssertEqual(coach.session?.step, 5, "means nothing once the pool is in")
+    }
+
+    func test_squareSheetSwipedAwayStepsBackToReadOrOnToTheHoldStep() throws {
+        let (coach, _) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.completeBoard))
+        for event: TutorialEvent in [.editEntered, .editSaved, .simpleSquareDone] { coach.handle(event) }
+        coach.next()
+        coach.handle(.countingSheetOpened)
+        XCTAssertEqual(coach.session?.step, 5, "the chips")
+        coach.handle(.squareSheetClosed)
+        XCTAssertEqual(coach.session?.step, 4, "tap Read again")
+        coach.handle(.countingSheetOpened)
+        coach.handle(.countLogged)
+        XCTAssertEqual(coach.session?.step, 6, "the Undo strip (read-only)")
+        coach.handle(.squareSheetClosed)
+        XCTAssertEqual(coach.session?.step, 7, "nothing left to close: hold Tidy desk")
+        coach.handle(.squareSheetClosed)
+        XCTAssertEqual(coach.session?.step, 7, "ignored elsewhere")
     }
 }

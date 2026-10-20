@@ -48,7 +48,7 @@ final class TutorialSandboxTests: XCTestCase {
 
     // MARK: - Lesson 3 — Sample week
 
-    func test_sampleWeek_startsAtFourOfNineWithReadAtTwelveOfTwenty() throws {
+    func test_sampleWeek_startsAtThreeOfNineWithReadAtTwelveOfTwenty() throws {
         let sandbox = try AppDatabase.seedTutorialSandbox(lesson: .completeBoard, user: makeUser())
         let boardId = try XCTUnwrap(sandbox.sampleBoardId)
         let board = try XCTUnwrap(sandbox.database.fetchBoard(id: boardId))
@@ -57,7 +57,7 @@ final class TutorialSandboxTests: XCTestCase {
         XCTAssertEqual(board.timeframe, .weekly)
         XCTAssertEqual(board.centerSquareType, .none)
         XCTAssertEqual(board.status, .active)
-        XCTAssertEqual(board.completedTasks, 4, "4/9 done at the start")
+        XCTAssertEqual(board.completedTasks, 3, "3/9 done at the start (Water plants, Walk, Cook dinner)")
         XCTAssertEqual(board.linesCompleted, 0, "no Bingo before the lesson reaches it")
 
         // The window contains now, so the events count.
@@ -97,13 +97,13 @@ final class TutorialSandboxTests: XCTestCase {
         XCTAssertEqual(vm.windowedCountValue(walk), 10)
         XCTAssertTrue(vm.windowedCompletedValue(walk))
         let doneTitles = Set(vm.allTasks.filter { $0.type == .normal && vm.windowedCompletedValue($0) }.map(\.title))
-        XCTAssertEqual(doneTitles, ["Water plants", "Call mom", "Cook dinner"])
+        XCTAssertEqual(doneTitles, ["Water plants", "Cook dinner"], "Call mom starts undone (owner: one line at the Bingo)")
     }
 
-    /// The scripted lesson: Stretch (5 of 9), Read to 22/20 (6 of 9) — neither
-    /// closes a line — then Tidy desk closes the FIRST line(s) (7 of 9), and
-    /// Journal + No sugar finish the board.
-    func test_sampleWeek_scriptYieldsTheFirstBingoOnTidyDeskAndTheGreenlogAtTheEnd() throws {
+    /// The scripted lesson: Stretch (4 of 9), Read to 22/20 (5 of 9) — neither
+    /// closes a line — then Tidy desk closes exactly ONE line, the middle row
+    /// (6 of 9), and Call mom + Journal + No sugar finish the board.
+    func test_sampleWeek_scriptYieldsOneBingoOnTidyDeskAndTheGreenlogAtTheEnd() throws {
         let sandbox = try AppDatabase.seedTutorialSandbox(lesson: .completeBoard, user: makeUser())
         let db = sandbox.database
         let boardId = try XCTUnwrap(sandbox.sampleBoardId)
@@ -121,7 +121,7 @@ final class TutorialSandboxTests: XCTestCase {
         // 3. Stretch
         vm.handleNormalTap(boardTask: try placement("Stretch").0)
         settle()
-        XCTAssertEqual(try board().completedTasks, 5)
+        XCTAssertEqual(try board().completedTasks, 4)
         XCTAssertEqual(try board().linesCompleted, 0)
 
         // 5-6. Read +10 -> 22 of 20, done
@@ -129,16 +129,18 @@ final class TutorialSandboxTests: XCTestCase {
         vm.handleCountingTap(boardTask: readPlacement, task: read, amount: 10, persistAsDefault: false)
         settle()
         XCTAssertTrue(waitUntil { vm.windowedCountValue(try! placement("Read 20 pages").1) == 22 })
-        XCTAssertEqual(try board().completedTasks, 6)
+        XCTAssertEqual(try board().completedTasks, 5)
         XCTAssertEqual(try board().linesCompleted, 0, "nothing closed a line before Tidy desk")
 
         // 9. Tidy desk
         vm.handleNormalTap(boardTask: try placement("Tidy desk").0)
         settle()
-        XCTAssertEqual(try board().completedTasks, 7)
-        XCTAssertGreaterThanOrEqual(try board().linesCompleted, 1, "Tidy desk closes the first line")
+        XCTAssertEqual(try board().completedTasks, 6)
+        XCTAssertEqual(try board().linesCompleted, 1, "Tidy desk closes exactly one line — the middle row")
 
-        // 10. Journal + No sugar
+        // 10. Call mom + Journal + No sugar
+        vm.handleNormalTap(boardTask: try placement("Call mom").0)
+        settle()
         vm.handleNormalTap(boardTask: try placement("Journal").0)
         settle()
         XCTAssertLessThan(try board().completedTasks, 9)

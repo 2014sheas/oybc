@@ -171,49 +171,43 @@ final class ProfileHomeViewModelTests: XCTestCase {
     // MARK: - gettingStartedDisplay
 
     func test_gettingStartedDisplay_dayOneHeroWhenZeroCompleted() {
-        XCTAssertEqual(
-            ProfileHomeViewModel.gettingStartedDisplay(completedCount: 0, isComplete: false),
-            .dayOneHero
-        )
+        XCTAssertEqual(ProfileHomeViewModel.gettingStartedDisplay(completedCount: 0), .dayOneHero)
     }
 
     func test_gettingStartedDisplay_rowWhenPartiallyComplete() {
+        XCTAssertEqual(ProfileHomeViewModel.gettingStartedDisplay(completedCount: 3), .row)
+    }
+
+    func test_gettingStartedDisplay_rowStaysWhenComplete() {
         XCTAssertEqual(
-            ProfileHomeViewModel.gettingStartedDisplay(completedCount: 3, isComplete: false),
-            .row
+            ProfileHomeViewModel.gettingStartedDisplay(completedCount: 9), .row,
+            "the row never hides: the walkthrough stays replayable from Profile"
         )
     }
 
-    func test_gettingStartedDisplay_hiddenWhenComplete() {
-        XCTAssertEqual(
-            ProfileHomeViewModel.gettingStartedDisplay(completedCount: 9, isComplete: true),
-            .hidden
-        )
+    // MARK: - gettingStartedCaption (Views/BoardsTab/Tutorial/TutorialCatalog.swift)
+
+    func test_gettingStartedCaption_firstFreeLessonWhenNoneComplete() {
+        XCTAssertEqual(gettingStartedCaption(progress: .empty), "Next: Create a task")
     }
 
-    // MARK: - nextIncompleteLessonTitle (Views/BoardsTab/Tutorial/TutorialCatalog.swift)
-
-    func test_nextIncompleteLessonTitle_firstFreeLessonWhenNoneComplete() {
-        XCTAssertEqual(nextIncompleteLessonTitle(progress: .empty), "Create a task")
-    }
-
-    func test_nextIncompleteLessonTitle_skipsCompletedLessonsInOrder() {
+    func test_gettingStartedCaption_skipsCompletedFreeLessonsInOrder() {
         var progress = TutorialProgress.empty
         progress.set(.createTask, .done)
         progress.set(.createBoard, .done)
-        XCTAssertEqual(nextIncompleteLessonTitle(progress: progress), "Complete a board")
+        XCTAssertEqual(gettingStartedCaption(progress: progress), "Next: Complete a board")
     }
 
-    func test_nextIncompleteLessonTitle_proLessonFollowsTheFreeRow() {
+    func test_gettingStartedCaption_neverPointsAtAProLesson() {
         var progress = TutorialProgress.empty
         for id in TutorialLessonID.middleRow { progress.set(id, .done) }
-        XCTAssertEqual(nextIncompleteLessonTitle(progress: progress), "Multi-step tasks")
+        XCTAssertEqual(gettingStartedCaption(progress: progress), "Bingo · middle row")
     }
 
-    func test_nextIncompleteLessonTitle_nilWhenAllComplete() {
+    func test_gettingStartedCaption_greenlogWhenAllComplete() {
         var progress = TutorialProgress.empty
         for id in TutorialLessonID.allCases { progress.set(id, .done) }
-        XCTAssertNil(nextIncompleteLessonTitle(progress: progress))
+        XCTAssertEqual(gettingStartedCaption(progress: progress), "Greenlog")
     }
 
     // MARK: - load() integration (AppDatabase.makeTestInstance())
