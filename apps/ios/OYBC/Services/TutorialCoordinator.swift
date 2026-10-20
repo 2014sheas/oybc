@@ -86,6 +86,8 @@ struct TutorialSignals: Equatable {
     /// What a play-board square accepts right now (lesson 3): the one gesture
     /// the step teaches, nothing while the lesson waits for Next.
     var squareInteraction: TutorialSquareInteraction = .free
+    /// A Bingo / Greenlog moment is on screen (a sheet over it closes).
+    var momentOpen: Bool = false
 
     /// No lesson running.
     static let inactive = TutorialSignals()
@@ -155,7 +157,8 @@ final class TutorialCoordinator: ObservableObject {
         return TutorialSignals(
             active: true, step: session.step, phase: session.phase, sandboxed: sandbox != nil,
             closesSquareSheet: step?.closesSquareSheet ?? false, holdsToast: step?.holdsToast ?? false,
-            squareInteraction: session.awaitingNext ? .none : (step?.squareInteraction ?? .none)
+            squareInteraction: session.awaitingNext ? .none : (step?.squareInteraction ?? .none),
+            momentOpen: session.momentOpen
         )
     }
 

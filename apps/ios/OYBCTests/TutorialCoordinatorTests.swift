@@ -186,8 +186,10 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertTrue(coach.start(.completeBoard))
         coach.setMomentOpen(true)
         XCTAssertEqual(coach.session?.momentOpen, true)
+        XCTAssertTrue(coach.signals.momentOpen, "a square sheet over the moment closes on this")
         coach.handle(.bingoMomentClosed)       // not this step's event, but it still un-hides
         XCTAssertEqual(coach.session?.momentOpen, false)
+        XCTAssertFalse(coach.signals.momentOpen)
     }
 
     // MARK: - What the squares accept

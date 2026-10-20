@@ -544,6 +544,13 @@ struct BoardWizardTasksStepView: View {
                 guard let id = newValue else { return }
                 withAnimation { proxy.scrollTo(id, anchor: .top) }
             }
+            // A lesson's expanded pool scrolls to the top so its member rows
+            // (the next step's spotlight) are on screen — the scrim swallows
+            // scroll drags outside the lit controls.
+            .onChange(of: expandedSourceIds) { before, after in
+                guard tutorialSignals.active, let id = after.subtracting(before).first else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .top) }
+            }
         }
         .background(RisoPaperBackground())
         .safeAreaInset(edge: .bottom) {
@@ -753,6 +760,7 @@ struct BoardWizardTasksStepView: View {
                     onSetPartTarget: { onSetPartTarget(source.sourceId, $0, $1, $2) },
                     onSetPartVary: { onSetPartVary(source.sourceId, $0, $1, $2) }
                 )
+                .id(source.sourceId)
             }
         )
     }

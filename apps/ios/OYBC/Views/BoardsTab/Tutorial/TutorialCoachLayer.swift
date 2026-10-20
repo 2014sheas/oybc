@@ -178,10 +178,11 @@ struct TutorialCoachOverlay: View {
             doneLayer(session: session, step: step)
         } else if hasTarget {
             targetLayer(geo: geo, session: session, step: step, lit: lit)
-        } else if !isRoot, step.onSheet {
-            // The sheet owns the step but its lit control went away (the Undo
-            // strip after Undo): keep the mark — and its exit / Next — on the
-            // sheet, where the root layer defers to it.
+        } else if !isRoot {
+            // A sheet is up with nothing lit on it: the step's own control went
+            // away (the Undo strip after Undo), or the sheet was opened from a
+            // lit square (the finale's Read). Keep the mark — and its exit /
+            // Next — on the sheet, where the root layer defers to it.
             mark(session: session, step: step, notch: .none, notchOffset: 0)
                 .padding(.horizontal, TutorialCoachGeometry.markInset)
                 .padding(.bottom, 24 + keyboardHeight)
