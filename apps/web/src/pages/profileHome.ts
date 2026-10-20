@@ -77,7 +77,7 @@ export interface StreakTileData {
    *  hero, which is the daily GREENLOG streak). */
   currentBingoStreak: number;
   /** Longest daily GREENLOG streak — reuses `StreaksPage`'s own "Longest"
-   *  stat verbatim (spec: "'Longest' and 'GREENLOGs' from the same stats
+   *  stat verbatim (spec: "'Longest' and 'Greenlogs' from the same stats
    *  used by StreaksView"). */
   longestGreenlogStreak: number;
   /** Total completed (GREENLOGed), non-deleted boards — same count

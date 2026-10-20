@@ -68,7 +68,7 @@ export function deriveFlashOutcome(input: FlashOutcomeInput): FlashOutcome | nul
     return messageOutcome(`Bingo lost: ${input.lostBingos.join(', ')}`);
   }
   if (input.isGreenlog) {
-    return { text: 'GREENLOG! Board complete!', kind: 'greenlog', newLineIds: input.newBingos };
+    return { text: 'Greenlog! Board complete!', kind: 'greenlog', newLineIds: input.newBingos };
   }
   if (input.newBingos.length > 0) {
     return { text: `Bingo! ${input.newBingos.join(', ')}`, kind: 'bingo', newLineIds: input.newBingos };

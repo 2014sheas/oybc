@@ -318,7 +318,7 @@ struct StreaksContent: View {
         HStack(spacing: 10) {
             statCard(label: "Current", value: "\(currentStreak)d", accent: .risoRed)
             statCard(label: "Longest", value: longestStreak == 0 ? "–" : "\(longestStreak)d", accent: .risoBlue)
-            statCard(label: "GREENLOGs", value: "\(greenlogCount)", accent: .risoGreen)
+            statCard(label: "Greenlogs", value: "\(greenlogCount)", accent: .risoGreen)
         }
     }
 

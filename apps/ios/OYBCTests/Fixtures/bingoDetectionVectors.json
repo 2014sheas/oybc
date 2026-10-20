@@ -915,7 +915,7 @@
         "totalCompleted": 9,
         "totalSquares": 9
       },
-      "expected": "GREENLOG!"
+      "expected": "Greenlog!"
     },
     {
       "name": "single-bingo-message",
@@ -960,7 +960,7 @@
         "totalCompleted": 9,
         "totalSquares": 9
       },
-      "expected": "GREENLOG!"
+      "expected": "Greenlog!"
     }
   ],
   "getHighlightedSquares": [

@@ -155,7 +155,7 @@ struct ProfileBoardSettingsTileContent: View {
 }
 
 /// The populated Streak tile's inner layout — headline number + "day
-/// streak" on one baseline, "Longest N · N GREENLOGs" below.
+/// streak" on one baseline, "Longest N · N Greenlogs" below.
 struct ProfileStreakTileContent: View {
     let bingoStreak: Int
     let longestStreak: Int
@@ -183,7 +183,7 @@ struct ProfileStreakTileContent: View {
                         .font(.risoHead(13, .extraBold))
                         .foregroundStyle(Color.risoInkStatic)
                 }
-                Text("Longest \(longestStreak) · \(greenlogCount) GREENLOGs")
+                Text("Longest \(longestStreak) · \(greenlogCount) Greenlogs")
                     .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoInkStatic.opacity(0.75))
             }

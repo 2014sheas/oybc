@@ -127,7 +127,7 @@ enum BingoDetection {
     /// Format a bingo detection result into a display message.
     ///
     /// Returns a human-readable string describing the bingo state:
-    /// - "GREENLOG!" when all squares are complete
+    /// - "Greenlog!" when all squares are complete
     /// - "Bingo! (row_0, col_2)" when one or more lines are complete
     /// - nil when no lines are complete
     ///
@@ -135,7 +135,7 @@ enum BingoDetection {
     /// - Returns: Display message string, or nil if no bingos detected
     static func formatBingoMessage(result: BingoDetectionResult) -> String? {
         if result.isGreenlog {
-            return "GREENLOG!"
+            return "Greenlog!"
         }
 
         if result.completedLines.isEmpty {

@@ -537,7 +537,7 @@ private struct OnboardingSlide {
         ),
         OnboardingSlide(
             kicker: "The payoff",
-            title: "Clear it for a\nGREENLOG.",
+            title: "Clear it for a\nGreenlog.",
             art: .full
         ),
     ]

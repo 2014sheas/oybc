@@ -168,6 +168,10 @@ struct BoardSetupFormView: View {
                     )
                     .labelsHidden()
                     .tint(Color.risoBlue)
+                    // Ideal width, so the compact pill always renders the
+                    // medium date ("Apr 30, 2026") like Start date; a squeezed
+                    // proposal makes UIKit fall back to "4/30/26" run-to-run.
+                    .fixedSize()
                 }
                 Menu {
                     Button {

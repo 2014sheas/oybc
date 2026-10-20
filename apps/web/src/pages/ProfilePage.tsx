@@ -243,7 +243,7 @@ export function ProfilePage(): React.ReactElement {
                 </div>
                 <p className={styles.tileCaption}>
                   Longest {home.streak.longestGreenlogStreak} &middot; {home.streak.greenlogCount}{' '}
-                  GREENLOGs
+                  Greenlogs
                 </p>
               </div>
             </>

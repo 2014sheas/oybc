@@ -36,7 +36,7 @@ final class BoardShareContentTests: XCTestCase {
     func test_shareText() {
         XCTAssertEqual(content(.bingo, size: 5).shareText, "Bingo on October reset! 3 of 12 lines.")
         XCTAssertEqual(content(.bingo, size: 3).shareText, "Bingo on October reset! 3 of 8 lines.")
-        XCTAssertEqual(content(.greenlog).shareText, "I crushed every square. GREENLOG on On Your Bingo Card!")
+        XCTAssertEqual(content(.greenlog).shareText, "I crushed every square. Greenlog on On Your Bingo Card!")
     }
 
     func test_squaresCardAlwaysOn_streakCardUnderChipRule() {

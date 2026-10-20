@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - MomentPresentation samples
 
-/// A fully-complete sample 5×5 board for the tutorial's "Preview a GREENLOG"
+/// A fully-complete sample 5×5 board for the tutorial's "Preview a Greenlog"
 /// and the moment snapshot tests — no database, deterministic.
 extension MomentPresentation {
 
