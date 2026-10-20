@@ -40,6 +40,7 @@ import {
   SyncStatus,
   UserSchema,
   mergeUserPreferences,
+  unionTutorialProgress,
   PULL_APPLY_ORDER,
   clearableFieldsFor,
   type User,
@@ -48,6 +49,7 @@ import {
 } from '@oybc/shared';
 import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
+import { currentTimestamp } from '../db/utils';
 import { advancePullWatermark, fetchPullWatermarks } from '../db/operations/syncWatermarks';
 
 // Stamp every enqueue with the LIVE signed-in uid (docs/GUEST_MODE.md
@@ -383,11 +385,18 @@ async function applyRemoteUserDoc(
     recordSyncEvent('pulled');
     return `Pulled users/${userId} (new)`;
   }
+  // Tutorial progress is unioned across both sides so whole-document LWW can
+  // never regress a finished lesson (`unionTutorialProgress`).
+  const unionedProgress = unionTutorialProgress(
+    localUser.preferences?.tutorialProgress,
+    remoteUser.preferences?.tutorialProgress
+  );
   const resolution = resolveConflict(localSyncable!, remoteSyncable);
   if (resolution.winner === 'remote') {
     // Preserve the local `lastSyncedAt` watermark through a pull.
     await db.users.put({
       ...remoteUser,
+      preferences: mergeUserPreferences({ ...remoteUser.preferences, tutorialProgress: unionedProgress }),
       lastSyncedAt: localUser.lastSyncedAt ?? remoteUser.lastSyncedAt,
     });
     recordSyncEvent('pulled');
@@ -400,6 +409,20 @@ async function applyRemoteUserDoc(
   // not a subcollection), so it can't share that function directly, but the
   // push loop already special-cases `entityType === 'users'` with its own
   // docRef, so a plain UPDATE enqueue drains through the same path.
+  const localProgress = mergeUserPreferences(localUser.preferences).tutorialProgress;
+  if (JSON.stringify(unionedProgress) !== JSON.stringify(localProgress)) {
+    // The remote knew a lesson further along: fold it into the winning local
+    // row (version bump so it wins the push) and re-assert.
+    const folded: User = {
+      ...localUser,
+      preferences: mergeUserPreferences({ ...localUser.preferences, tutorialProgress: unionedProgress }),
+      version: (localUser.version ?? 0) + 1,
+      updatedAt: currentTimestamp(),
+    };
+    await db.users.put(folded);
+    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, folded, 0, { ownerUid: userId });
+    return null;
+  }
   if (rowsGenuinelyDiffer(localSyncable!, remoteSyncable)) {
     // Owned by the pull's uid, not the live one (docs/GUEST_MODE.md §Collision).
     await addToSyncQueue('users', userId, SyncOperationType.UPDATE, localUser, 0, { ownerUid: userId });

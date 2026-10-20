@@ -633,6 +633,7 @@ struct BoardPlayView: View {
         .onChange(of: viewModel.board?.id) { _, _ in
             refreshStreaks()
         }
+        .onChange(of: viewModel.applyCount) { _, _ in reportTutorialIncompleteSquares() }
         .onDisappear {
             // P3 — re-snapshot the last-seen baseline on leaving (belt-and-suspenders).
             viewModel.snapshotArrivalsOnDisappear()
@@ -668,9 +669,7 @@ struct BoardPlayView: View {
             guard let event, !editMode else { return }
             triggerArrivalBanner(from: event)
         }
-        // Board Edit redesign slice 3 (T5) — the `.editEvent` outcome
-        // observer (saved / saveFailed / boardClosed) moved into
-        // `BoardEditPresenter`, which owns the alerts it drives.
+        // The `.editEvent` outcome observer lives in `BoardEditPresenter` (owns its alerts).
         // The square sheet (counting / compound / achievement taps, Normal
         // "View Details", every closed-board tap) — content, hand-offs and the
         // drains live in `BoardPlayView+SquareSheet.swift`. The library and
@@ -714,6 +713,7 @@ struct BoardPlayView: View {
                 originBoardId: viewModel.board?.id,
                 database: viewModel.database
             )
+            .tutorialExitGuard()
         }
         // Share sheet — presented from the moment overlay's share button
         // (the overlay stays beneath it); the kind is the open moment's.

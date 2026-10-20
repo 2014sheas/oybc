@@ -31,12 +31,25 @@ struct TutorialSession: Equatable {
     var poolSummary: String?
     /// The sandbox's sample board id (lesson 3).
     var sampleBoardId: String?
+    /// Lesson 3: row-major slots of the squares not yet complete, reported by the
+    /// play board; the finale lights every one of them.
+    var incompleteSlots: [Int]?
 
     /// The lesson's script.
     var steps: [TutorialStep] { TutorialCatalog.info(for: lesson).steps }
 
     /// The current step (nil once past the end).
     var currentStep: TutorialStep? { steps.indices.contains(step) ? steps[step] : nil }
+
+    /// The controls the current step lights: its anchors, or (finale) every
+    /// still-incomplete square.
+    var litAnchors: [TutorialAnchorID] {
+        guard let step = currentStep else { return [] }
+        if step.litsIncompleteSquares, let slots = incompleteSlots, !slots.isEmpty {
+            return slots.map { .square($0) }
+        }
+        return step.anchors
+    }
 }
 
 /// The value-typed slice of coordinator state that real screens read from the
@@ -80,6 +93,11 @@ final class TutorialCoordinator: ObservableObject {
     var sandboxDatabase: AppDatabase? { sandbox?.database }
     /// The lesson that just finished, until the tutorial board plays its pop.
     @Published private(set) var justCompleted: TutorialLessonID?
+
+    /// The lesson is closing: the stage cover is animating out. The session and
+    /// sandbox stay alive until `stageDidDismiss()` so nothing flashes or falls
+    /// back to the real database mid-animation.
+    @Published private(set) var isClosing = false
 
     /// How many sheet-level coach layers are on screen — the root layer only
     /// dims (and shows no fallback mark) while one of them owns the step.
@@ -130,6 +148,13 @@ final class TutorialCoordinator: ObservableObject {
                 : "\(summary). Undo stays here."
         case .poolFills:
             return session.poolSummary.map { "\($0). Tap Next." } ?? step.text
+        case .remainingSquares:
+            guard let left = session.incompleteSlots?.count, left > 0 else { return step.text }
+            let word = BoardWizardTasksStepView.spelledCount(left)
+            let head = word.prefix(1).uppercased() + word.dropFirst()
+            return left == 1
+                ? "\(head) left. Complete it for a Greenlog."
+                : "\(head) left. Complete them for a Greenlog."
         case nil:
             return step.text
         }
@@ -142,6 +167,10 @@ final class TutorialCoordinator: ObservableObject {
         if remote != progress { progress = remote }
     }
 
+    /// Publishes `updated` immediately and writes it into the user's synced
+    /// preferences (`AppDatabase.updateUserPreferences`: version bump + one
+    /// `users` sync item). A preview coordinator (no user) only publishes.
+    /// - Parameter updated: The full progress value to store.
     private func persist(_ updated: TutorialProgress) {
         progress = updated
         guard persists, let userId else { return }
@@ -156,6 +185,23 @@ final class TutorialCoordinator: ObservableObject {
         }
     }
 
+    /// Saves `step` as the lesson's place when it is further than what is saved.
+    /// Never lowers a saved step, never touches a finished lesson and writes
+    /// nothing when nothing changed (no version bump).
+    private func recordStep(_ lesson: TutorialLessonID, step: Int) {
+        guard step > 0 else { return }
+        let saved: Int
+        switch progress.state(of: lesson) {
+        case .done: return
+        case .inProgress(let s): saved = s
+        default: saved = 0
+        }
+        guard step > saved else { return }
+        var next = progress
+        next.set(lesson, .inProgress(step: step))
+        persist(next)
+    }
+
     /// Hides the Boards-tab card (allowed once the middle row is done).
     func dismissCard() {
         guard progress.canDismissCard, !progress.cardDismissed else { return }
@@ -166,8 +212,7 @@ final class TutorialCoordinator: ObservableObject {
 
     /// Clears all progress and un-dismisses the card (the DEBUG reset).
     func reset() {
-        session = nil
-        sandbox = nil
+        tearDown()
         justCompleted = nil
         persist(.empty)
     }
@@ -180,27 +225,32 @@ final class TutorialCoordinator: ObservableObject {
     @discardableResult
     func start(_ lesson: TutorialLessonID, user: User? = nil) -> Bool {
         guard lesson.isFree, session == nil else { return false }
+        var saved = 0
+        if case .inProgress(let savedStep) = progress.state(of: lesson) {
+            saved = min(savedStep, max(TutorialCatalog.info(for: lesson).steps.count - 1, 0))
+        }
         var sandboxForLesson: TutorialSandbox?
         if lesson == .createBoard || lesson == .completeBoard {
             guard let user = user ?? currentUserRow() else { return false }
             do {
-                sandboxForLesson = try AppDatabase.seedTutorialSandbox(lesson: lesson, user: user)
+                // Lesson 3 reseeds to the state its saved step implies.
+                sandboxForLesson = try AppDatabase.seedTutorialSandbox(lesson: lesson, user: user, resumeStep: saved)
             } catch {
                 dlog("⚠️ TutorialCoordinator: sandbox seeding failed: \(error)")
                 return false
             }
         }
-        var step = 0
-        var resumed = false
-        if case .inProgress(let saved) = progress.state(of: lesson) {
-            step = min(saved, max(TutorialCatalog.info(for: lesson).steps.count - 1, 0))
-            resumed = step > 0
-        }
         sandbox = sandboxForLesson
-        session = TutorialSession(lesson: lesson, step: step, resumed: resumed, sampleBoardId: sandboxForLesson?.sampleBoardId)
+        isClosing = false
+        session = TutorialSession(
+            lesson: lesson, step: TutorialCatalog.resumeStep(lesson: lesson, saved: saved),
+            resumed: saved > 0, sampleBoardId: sandboxForLesson?.sampleBoardId
+        )
         return true
     }
 
+    /// The signed-in user's row from the real database (the sandbox gets a copy);
+    /// nil for a preview coordinator or when the row is missing.
     private func currentUserRow() -> User? {
         guard let userId else { return nil }
         return try? database.fetchUser(id: userId)
@@ -209,7 +259,7 @@ final class TutorialCoordinator: ObservableObject {
     /// An action step's event from a real control. Advances when it is the one
     /// the current step waits for.
     func handle(_ event: TutorialEvent) {
-        guard var current = session, current.phase == .running else { return }
+        guard var current = session, current.phase == .running, !isClosing else { return }
         // A moment closing always un-hides the coach layer, whatever the step.
         if event == .bingoMomentClosed || event == .greenlogMomentClosed {
             current.momentOpen = false
@@ -229,10 +279,14 @@ final class TutorialCoordinator: ObservableObject {
 
     /// The coach mark's Next on a read-only step.
     func next() {
-        guard let current = session, current.phase == .running, current.currentStep?.advance == .next else { return }
+        guard let current = session, current.phase == .running, !isClosing, current.currentStep?.advance == .next else { return }
         advance()
     }
 
+    /// Moves to the next step. Past the last step the lesson completes and is
+    /// saved as done; otherwise the new place is saved so "Your place is saved"
+    /// holds even if the app is killed (`recordStep` never lowers or rewrites a
+    /// finished lesson).
     private func advance() {
         guard var current = session else { return }
         current.step += 1
@@ -242,9 +296,10 @@ final class TutorialCoordinator: ObservableObject {
             session = current
             var next = progress
             next.set(current.lesson, .done)
-            persist(next)
+            if next != progress { persist(next) }
         } else {
             session = current
+            recordStep(current.lesson, step: current.step)
         }
     }
 
@@ -274,6 +329,13 @@ final class TutorialCoordinator: ObservableObject {
         session = current
     }
 
+    /// Lesson 3: the slots of the squares not yet complete (finale lights them all).
+    func reportIncomplete(slots: [Int]) {
+        guard var current = session, current.incompleteSlots != slots else { return }
+        current.incompleteSlots = slots
+        session = current
+    }
+
     /// Lesson 2: the pulled pool's line for the "Tap Next" step.
     func reportPool(summary: String) {
         guard var current = session else { return }
@@ -297,23 +359,23 @@ final class TutorialCoordinator: ObservableObject {
         session = current
     }
 
-    /// "Leave": saves the step (unless the lesson was already done), discards
-    /// the sandbox and returns to the tutorial board.
+    /// "Leave": saves the step (never lowering it, never touching a finished
+    /// lesson) and closes the stage. The session and sandbox stay alive until
+    /// `stageDidDismiss()`.
     func leave() {
         guard let current = session else { return }
-        if progress.state(of: current.lesson) != .done {
-            var next = progress
-            next.set(current.lesson, current.step == 0 ? .notStarted : .inProgress(step: current.step))
-            if next != progress { persist(next) }
-        }
-        endSession()
+        recordStep(current.lesson, step: current.step)
+        var ending = current
+        ending.phase = .running
+        session = ending
+        isClosing = true
     }
 
     /// "Back to the board" on the lesson-complete card.
     func finishCompletedLesson() {
         guard let current = session, current.phase == .complete else { return }
         justCompleted = current.lesson
-        endSession()
+        isClosing = true
     }
 
     /// The tutorial board played the square pop (and any Bingo toast).
@@ -321,10 +383,21 @@ final class TutorialCoordinator: ObservableObject {
         justCompleted = nil
     }
 
-    private func endSession() {
+    /// The stage cover finished dismissing (any way it was dismissed). A lesson
+    /// still running is left first so its place is saved, then the session,
+    /// sandbox and its throwaway defaults are torn down.
+    func stageDidDismiss() {
+        if session != nil, !isClosing { leave() }
+        tearDown()
+    }
+
+    /// Drops the session and sandbox and clears the sandbox boards' throwaway
+    /// last-seen snapshots. Runs only after the cover is gone, so no view ever
+    /// reads a missing sandbox (or falls back to the real database) mid-animation.
+    private func tearDown() {
         session = nil
         sandbox = nil
-        // Sandbox boards' last-seen snapshots live in a throwaway suite.
+        isClosing = false
         UserDefaults(suiteName: CounterArrivalStore.tutorialSuiteName)?
             .removePersistentDomain(forName: CounterArrivalStore.tutorialSuiteName)
     }

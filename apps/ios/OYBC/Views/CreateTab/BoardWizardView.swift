@@ -394,6 +394,7 @@ struct BoardWizardView: View {
                     ? { if let id = wizard.draftBoardId { onDeleteDraft?(id) } }
                     : nil
             )
+            .tutorialExitGuard()
             .presentationDetents([.medium])
         }
         .alert(

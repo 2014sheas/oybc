@@ -26,7 +26,10 @@ export type ThemePreference = 'light' | 'dark' | 'system';
  */
 export type TutorialLessonProgress =
   | { status: 'inProgress'; step: number }
-  | { status: 'done' };
+  | { status: 'done' }
+  // A status this client does not know (written by a newer client): kept
+  // opaque and round-tripped untouched.
+  | { status: string; [key: string]: unknown };
 
 /**
  * Getting Started tutorial progress (iOS tutorial board). Synced inside the
@@ -46,6 +49,34 @@ export const DEFAULT_TUTORIAL_PROGRESS: TutorialProgress = {
   cardDismissed: false,
 };
 
+/** Rank of a lesson entry for the union: done > inProgress (by step) > unrecognised. */
+function lessonRank(entry: TutorialLessonProgress): number {
+  if (entry.status === 'done') return 1_000_000;
+  if (entry.status === 'inProgress') return 1_000 + ((entry as { step: number }).step ?? 0);
+  return 1;
+}
+
+/**
+ * Union of the local and an incoming tutorial progress, applied on a user-doc
+ * pull so whole-document last-write-wins can never regress a finished lesson:
+ * per lesson `done` beats `inProgress`, a higher step beats a lower one, an
+ * unrecognised entry loses to either (ties keep the incoming entry), and
+ * `cardDismissed` is an OR. Swift twin: `TutorialProgress.union(local:incoming:)`.
+ */
+export function unionTutorialProgress(
+  local: TutorialProgress | undefined,
+  incoming: TutorialProgress | undefined
+): TutorialProgress {
+  const a = mergeTutorialProgress(local);
+  const b = mergeTutorialProgress(incoming);
+  const lessons: Record<string, TutorialLessonProgress> = { ...a.lessons };
+  for (const [id, entry] of Object.entries(b.lessons)) {
+    const existing = lessons[id];
+    if (!existing || lessonRank(entry) >= lessonRank(existing)) lessons[id] = entry;
+  }
+  return { lessons, cardDismissed: a.cardDismissed || b.cardDismissed };
+}
+
 /**
  * Forward-compatible decode of a (possibly untrusted) tutorial progress value.
  * Malformed lesson entries are dropped; a malformed container yields the default.
@@ -62,13 +93,13 @@ export function mergeTutorialProgress(raw: unknown): TutorialProgress {
       const entry = value as { status?: unknown; step?: unknown };
       if (entry.status === 'done') {
         lessons[id] = { status: 'done' };
-      } else if (
-        entry.status === 'inProgress' &&
-        typeof entry.step === 'number' &&
-        Number.isInteger(entry.step) &&
-        entry.step >= 0
-      ) {
-        lessons[id] = { status: 'inProgress', step: entry.step };
+      } else if (entry.status === 'inProgress') {
+        if (typeof entry.step === 'number' && Number.isInteger(entry.step) && entry.step >= 0) {
+          lessons[id] = { status: 'inProgress', step: entry.step };
+        }
+      } else if (typeof entry.status === 'string') {
+        // Unknown status from a newer client: keep it opaque (a copy).
+        lessons[id] = { ...(value as Record<string, unknown>), status: entry.status };
       }
     }
   }
@@ -153,7 +184,10 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   recurringWindowReminders: true,
   dailyPlayReminderEnabled: false,
   dailyPlayReminderTime: '20:00',
-  tutorialProgress: DEFAULT_TUTORIAL_PROGRESS,
+  // A getter so every spread of the defaults gets its OWN nested object.
+  get tutorialProgress(): TutorialProgress {
+    return { lessons: {}, cardDismissed: false };
+  },
 };
 
 /** 24-hour "HH:mm" time-of-day, 00:00–23:59. */

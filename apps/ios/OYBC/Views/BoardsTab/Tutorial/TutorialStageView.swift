@@ -22,26 +22,16 @@ struct TutorialStageView: View {
     var body: some View {
         ZStack {
             lessonScreen
-            if let session = coach.session {
-                if session.phase == .complete {
-                    completeOverlay(session)
-                }
+            if let session = coach.session, session.phase == .complete, !coach.isClosing {
+                completeOverlay(session)
             }
         }
         .preferredColorScheme(forcedColorScheme)
         .environment(\.tutorialCoach, coach)
         .environment(\.tutorialSignals, coach.signals)
         .environment(\.appDatabase, coach.sandboxDatabase ?? .shared)
-        .sheet(isPresented: Binding(
-            get: { coach.session?.phase == .confirmingLeave },
-            set: { if !$0 { coach.keepGoing() } }
-        )) {
-            TutorialLeaveSheet(onKeepGoing: { coach.keepGoing() }, onLeave: { coach.leave() })
-                .presentationDetents([.medium])
-                .environment(\.tutorialCoach, nil)
-        }
-        .onChange(of: coach.session == nil) { _, ended in
-            if ended { dismiss() }
+        .onChange(of: coach.isClosing) { _, closing in
+            if closing { dismiss() }
         }
     }
 

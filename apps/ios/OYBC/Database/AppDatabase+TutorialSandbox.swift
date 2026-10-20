@@ -40,10 +40,14 @@ extension AppDatabase {
     ///     the user row.
     ///   - user: The signed-in user; the sandbox gets a copy of the row so
     ///     userId-scoped queries and the wizard's preferences resolve.
+    ///   - resumeStep: The saved step being resumed (lesson 3 reseeds the board to
+    ///     the state that step implies: Stretch done from step 3, Read at 22/20
+    ///     from step 6, Tidy desk done from step 9).
     ///   - now: The seeding instant (injectable for tests).
     static func seedTutorialSandbox(
         lesson: TutorialLessonID,
         user: User,
+        resumeStep: Int = 0,
         now: Date = Date()
     ) throws -> TutorialSandbox {
         let db = try makeTutorialSandbox()
@@ -56,6 +60,7 @@ extension AppDatabase {
             let boardId = try db.seedTutorialSampleWeek(
                 userId: user.id,
                 weekStartDay: user.decodedPreferences.weekStartDay.rawValue,
+                resumeStep: resumeStep,
                 now: now
             )
             return TutorialSandbox(database: db, sampleBoardId: boardId)
@@ -133,7 +138,7 @@ extension AppDatabase {
     /// Seeds the sample board, its nine tasks, the in-window events that make
     /// four squares done, a few spare library tasks, and re-derives the
     /// board's denormalized stats. Returns the board id.
-    private func seedTutorialSampleWeek(userId: String, weekStartDay: String, now: Date) throws -> String {
+    private func seedTutorialSampleWeek(userId: String, weekStartDay: String, resumeStep: Int, now: Date) throws -> String {
         let ts = Self.tutorialTimestamp(now)
         let window = computeWeekBoundaries(now, weekStartDay: weekStartDay)
         let boardId = Self.generateUUID()
@@ -153,16 +158,21 @@ extension AppDatabase {
             try board.save(db)
             for (index, square) in grid.enumerated() {
                 let taskId = Self.generateUUID()
+                // What a resumed lesson has already done: Stretch (after step 3),
+                // Read to 22/20 (after step 6), Tidy desk (after step 9).
+                let resumedDone = (square.title == "Stretch" && resumeStep >= 3)
+                    || (square.title == "Tidy desk" && resumeStep >= 9)
+                let resumedRead = square.title == "Read 20 pages" && resumeStep >= 6
                 var task = Self.tutorialTask(id: taskId, userId: userId, title: square.title, now: ts)
                 if case .counting(let action, let unit, let goal, let current) = square.kind {
                     task.type = .counting
                     task.action = action
                     task.unit = unit
                     task.maxCount = CountValue(goal)
-                    task.currentCount = CountValue(current)
-                    task.isCompleted = square.done
+                    task.currentCount = CountValue(resumedRead ? current + 10 : current)
+                    task.isCompleted = square.done || resumedRead
                 } else {
-                    task.isCompleted = square.done
+                    task.isCompleted = square.done || resumedDone
                 }
                 try task.save(db)
                 let placement = BoardTask(
@@ -172,8 +182,11 @@ extension AppDatabase {
                 )
                 try placement.save(db)
                 // The in-window occurrences the resolver reads as "done so far".
+                if resumedRead {
+                    try Self.tutorialEvent(userId: userId, taskId: taskId, kind: .increment, delta: 10, now: ts).save(db)
+                }
                 switch square.kind {
-                case .normal where square.done:
+                case .normal where square.done || resumedDone:
                     try Self.tutorialEvent(userId: userId, taskId: taskId, kind: .completion, delta: nil, now: ts).save(db)
                 case .counting(_, _, _, let current) where current > 0:
                     try Self.tutorialEvent(userId: userId, taskId: taskId, kind: .increment, delta: CountValue(current), now: ts).save(db)

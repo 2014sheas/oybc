@@ -234,6 +234,9 @@ struct TutorialBoardView: View {
     /// Back from a lesson: play the square's pop, then the middle-row Bingo toast
     /// or the all-nine Greenlog when those just completed.
     private func stageDismissed() {
+        // Whatever dismissed the cover, a still-running lesson is left (saving its
+        // place) and the session and sandbox are torn down only now.
+        coach.stageDidDismiss()
         guard let finished = coach.justCompleted else { return }
         coach.consumeJustCompleted()
         popLesson = finished

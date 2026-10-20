@@ -122,19 +122,24 @@ struct TutorialCoachOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = 0
     @State private var keyboardHeight: CGFloat = 0
+    /// This layer raised the "Leave this lesson?" sheet (presented from here, not
+    /// from the stage, so it works above a sheet the lesson opened).
+    @State private var confirmingLeave = false
 
     var body: some View {
         GeometryReader { geo in
-            if let session = coach.session, session.phase != .complete, !session.momentOpen, let step = session.currentStep {
-                let lit = step.anchors.compactMap { id in
+            if let session = coach.session, session.phase != .complete, !coach.isClosing, !session.momentOpen, let step = session.currentStep {
+                let litIds = session.litAnchors
+                let lit = litIds.compactMap { id in
                     anchors[id].map { (rect: geo[$0.anchor], radius: $0.radius) }
                 }
-                let hasTarget = anchors[step.anchors[0]] != nil
+                let hasTarget = !lit.isEmpty
                 content(geo: geo, session: session, step: step, lit: lit, hasTarget: hasTarget)
                     .transaction { if reduceMotion { $0.animation = nil } }
             }
         }
         .ignoresSafeArea()
+        .tutorialLeaveSheet(coach: coach, isPresented: $confirmingLeave)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
             guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
             keyboardHeight = frame.minY >= UIScreen.main.bounds.height ? 0 : frame.height
@@ -233,7 +238,7 @@ struct TutorialCoachOverlay: View {
             showsNext: step.advance == .next,
             notch: notch,
             notchOffset: notchOffset,
-            onExit: { coach.requestLeave() },
+            onExit: { confirmingLeave = true; coach.requestLeave() },
             onNext: { coach.next() }
         )
     }
@@ -257,5 +262,76 @@ private struct TutorialRingPulse: View {
                 visible = true
                 withAnimation(.easeOut(duration: 0.35)) { expanded = true }
             }
+    }
+}
+
+// MARK: - Leave sheet + exit guard
+
+private struct TutorialLeaveSheetModifier: ViewModifier {
+    @ObservedObject var coach: TutorialCoordinator
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented, onDismiss: {
+            if coach.session?.phase == .confirmingLeave { coach.keepGoing() }
+        }) {
+            TutorialLeaveSheet(
+                onKeepGoing: { isPresented = false },
+                onLeave: { isPresented = false; coach.leave() }
+            )
+            .presentationDetents([.medium])
+        }
+    }
+}
+
+extension View {
+    /// Presents "Leave this lesson?" from this view.
+    fileprivate func tutorialLeaveSheet(coach: TutorialCoordinator, isPresented: Binding<Bool>) -> some View {
+        modifier(TutorialLeaveSheetModifier(coach: coach, isPresented: isPresented))
+    }
+
+    /// A small exit control for a presentation the lesson did not light but the
+    /// user can still reach mid-lesson (the Edit swap picker, a task detail, the
+    /// share sheet, the wizard's cancel dialog) — it must not need the scrim,
+    /// which would block the sheet. Inert outside a lesson.
+    func tutorialExitGuard() -> some View {
+        modifier(TutorialExitGuard())
+    }
+}
+
+private struct TutorialExitGuard: ViewModifier {
+    @Environment(\.tutorialCoach) private var coach
+
+    func body(content: Content) -> some View {
+        if let coach {
+            content.overlay(alignment: .bottomTrailing) { TutorialExitChip(coach: coach) }
+        } else {
+            content
+        }
+    }
+}
+
+private struct TutorialExitChip: View {
+    @ObservedObject var coach: TutorialCoordinator
+    @State private var confirming = false
+
+    var body: some View {
+        if coach.session?.phase == .running, !coach.isClosing {
+            Button {
+                confirming = true
+                coach.requestLeave()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(width: 36, height: 36)
+                    .risoCard(fill: .risoPaper2)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 14)
+            .padding(.bottom, 24)
+            .accessibilityLabel("Exit lesson")
+            .tutorialLeaveSheet(coach: coach, isPresented: $confirming)
+        }
     }
 }

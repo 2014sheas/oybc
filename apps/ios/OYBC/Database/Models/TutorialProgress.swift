@@ -39,6 +39,41 @@ enum TutorialLessonState: Equatable {
     /// Left mid-lesson at the 0-based `step`; tapping the square resumes there.
     case inProgress(step: Int)
     case done
+    /// A status a newer client wrote: kept opaque and written back untouched so
+    /// an older build never erases it. Renders as not started.
+    case unrecognized(TutorialJSONValue)
+}
+
+/// A minimal JSON value, so an unrecognised lesson entry round-trips verbatim.
+enum TutorialJSONValue: Equatable, Codable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([TutorialJSONValue])
+    case object([String: TutorialJSONValue])
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let v = try? c.decode(Bool.self) { self = .bool(v) }
+        else if let v = try? c.decode(Double.self) { self = .number(v) }
+        else if let v = try? c.decode(String.self) { self = .string(v) }
+        else if let v = try? c.decode([TutorialJSONValue].self) { self = .array(v) }
+        else { self = .object(try c.decode([String: TutorialJSONValue].self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let v): try c.encode(v)
+        case .number(let v): try c.encode(v)
+        case .string(let v): try c.encode(v)
+        case .array(let v): try c.encode(v)
+        case .object(let v): try c.encode(v)
+        }
+    }
 }
 
 // MARK: - TutorialProgress
@@ -69,7 +104,10 @@ struct TutorialProgress: Codable, Equatable {
 
     /// The saved state of a lesson.
     func state(of id: TutorialLessonID) -> TutorialLessonState {
-        lessons[id.rawValue] ?? .notStarted
+        switch lessons[id.rawValue] {
+        case .none, .some(.unrecognized): return .notStarted
+        case .some(let state): return state
+        }
     }
 
     /// Lessons finished (of the nine known ids).
@@ -132,7 +170,8 @@ struct TutorialProgress: Codable, Equatable {
                 case "inProgress":
                     if let step = entry.step, step >= 0 { parsed[id] = .inProgress(step: step) }
                 default:
-                    continue
+                    // An unknown status from a newer client: keep it opaque.
+                    if let whole = lossy.whole { parsed[id] = .unrecognized(whole) }
                 }
             }
         }
@@ -143,22 +182,81 @@ struct TutorialProgress: Codable, Equatable {
     /// Wraps `Entry` so one undecodable value doesn't fail the dictionary.
     private struct LossyEntry: Decodable {
         let entry: Entry?
+        /// The entry verbatim, for statuses this client does not know.
+        let whole: TutorialJSONValue?
         init(from decoder: Decoder) throws {
             entry = try? Entry(from: decoder)
+            whole = try? TutorialJSONValue(from: decoder)
         }
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        var wire: [String: Entry] = [:]
+        var wire: [String: TutorialJSONValue] = [:]
         for (id, state) in lessons {
             switch state {
             case .notStarted: continue
-            case .done: wire[id] = Entry(status: "done", step: nil)
-            case .inProgress(let step): wire[id] = Entry(status: "inProgress", step: step)
+            case .done: wire[id] = .object(["status": .string("done")])
+            case .inProgress(let step): wire[id] = .object(["status": .string("inProgress"), "step": .number(Double(step))])
+            case .unrecognized(let raw): wire[id] = raw
             }
         }
         try c.encode(wire, forKey: .lessons)
         try c.encode(cardDismissed, forKey: .cardDismissed)
+    }
+}
+
+// MARK: - Union (sync pull)
+
+extension TutorialProgress {
+
+    /// Rank used by the union: done > inProgress (by step) > unrecognised.
+    private static func rank(_ state: TutorialLessonState) -> Int {
+        switch state {
+        case .done: return 1_000_000
+        case .inProgress(let step): return 1_000 + step
+        case .unrecognized, .notStarted: return 1
+        }
+    }
+
+    /// Union of the local and an incoming progress, applied on a user-doc pull so
+    /// whole-document last-write-wins can never regress a finished lesson: per
+    /// lesson `done` beats `inProgress`, a higher step beats a lower one, an
+    /// unrecognised entry loses to either (ties keep the incoming entry) and
+    /// `cardDismissed` is an OR. Twin of `unionTutorialProgress` in `@oybc/shared`.
+    static func union(local: TutorialProgress, incoming: TutorialProgress) -> TutorialProgress {
+        var lessons = local.lessons
+        for (id, entry) in incoming.lessons {
+            if let existing = lessons[id], rank(entry) < rank(existing) { continue }
+            lessons[id] = entry
+        }
+        return TutorialProgress(lessons: lessons, cardDismissed: local.cardDismissed || incoming.cardDismissed)
+    }
+
+    /// The `tutorialProgress` inside a preferences value as it appears on a pulled
+    /// row or doc (a JSON string column, or an expanded dictionary).
+    static func fromPreferences(_ prefs: Any?) -> TutorialProgress? {
+        guard let dict = preferencesDictionary(prefs), let raw = dict["tutorialProgress"],
+              JSONSerialization.isValidJSONObject(raw),
+              let data = try? JSONSerialization.data(withJSONObject: raw) else { return nil }
+        return try? JSONDecoder().decode(TutorialProgress.self, from: data)
+    }
+
+    /// `prefs` with its `tutorialProgress` replaced by `progress`, as a dictionary
+    /// (nil when `prefs` is not a JSON object).
+    static func replacing(in prefs: Any?, with progress: TutorialProgress) -> [String: Any]? {
+        guard var dict = preferencesDictionary(prefs),
+              let data = try? JSONEncoder().encode(progress),
+              let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        dict["tutorialProgress"] = object
+        return dict
+    }
+
+    private static func preferencesDictionary(_ prefs: Any?) -> [String: Any]? {
+        if let dict = prefs as? [String: Any] { return dict }
+        if let text = prefs as? String, let data = text.data(using: .utf8) {
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        }
+        return nil
     }
 }

@@ -34,6 +34,8 @@ import SwiftUI
 /// which owns the database write.
 struct BoardEditPanel: View {
 
+    @Environment(\.tutorialSignals) private var tutorialSignals
+
     // MARK: - Props
 
     /// Original board record — used for display (grid size).
@@ -134,7 +136,9 @@ struct BoardEditPanel: View {
                 if squaresEditable {
                     squaresSection
                 }
+                // Archive / Delete / Close / Reopen are not part of a tutorial lesson.
                 BoardOptionsSectionView(items: boardItems, onSelect: onBoardItem)
+                    .tutorialDimmed(tutorialSignals.sandboxed)
                 if squaresEditable {
                     // Bottom clearance for the sticky save bar so the last row
                     // is always visible above the bar when the scroll view bottoms out.

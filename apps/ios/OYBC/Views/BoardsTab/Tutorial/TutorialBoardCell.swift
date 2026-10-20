@@ -177,7 +177,7 @@ struct TutorialBoardCell: View {
         case _ where isPro: return "\(info.title), Pro lesson, locked"
         case .done: return "\(info.title), done"
         case .inProgress(let step): return "\(info.title), \(step) of \(stepsTotal) steps"
-        case .notStarted: return info.title
+        case .notStarted, .unrecognized: return info.title
         }
     }
 

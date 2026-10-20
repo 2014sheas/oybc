@@ -168,7 +168,7 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertEqual(coach.progress.state(of: .createTask), .done)
         XCTAssertEqual(try savedProgress(real).state(of: .createTask), .done)
         let user = try XCTUnwrap(real.fetchUser(id: userId))
-        XCTAssertEqual(user.version, 2, "a preference write bumps the user version")
+        XCTAssertEqual(user.version, 6, "steps 2-5 and the completion each write once (the first step never does)")
         let queued = try real.fetchPendingSyncItems()
         XCTAssertTrue(queued.contains { $0.entityType == "users" && $0.entityId == userId }, "progress rides the user doc's sync")
     }
@@ -178,8 +178,12 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertTrue(coach.start(.createTask))
         for event in Self.createTaskScript { coach.handle(event) }
         coach.finishCompletedLesson()
-        XCTAssertNil(coach.session)
+        XCTAssertTrue(coach.isClosing)
+        XCTAssertNotNil(coach.session, "the session stays until the cover has finished dismissing")
         XCTAssertEqual(coach.justCompleted, .createTask)
+        coach.stageDidDismiss()
+        XCTAssertNil(coach.session)
+        XCTAssertEqual(coach.justCompleted, .createTask, "the board still plays the pop")
         coach.consumeJustCompleted()
         XCTAssertNil(coach.justCompleted)
     }
@@ -191,17 +195,20 @@ final class TutorialCoordinatorTests: XCTestCase {
         coach.requestLeave()
         XCTAssertEqual(coach.session?.phase, .confirmingLeave)
         coach.leave()
+        XCTAssertNotNil(coach.sandboxDatabase, "the sandbox lives until the cover is gone")
+        coach.stageDidDismiss()
         XCTAssertNil(coach.session)
-        XCTAssertNil(coach.sandboxDatabase, "the sandbox is discarded on leave")
+        XCTAssertNil(coach.sandboxDatabase, "the sandbox is discarded once the cover has dismissed")
         XCTAssertEqual(coach.progress.state(of: .createBoard), .inProgress(step: 3))
         XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 3))
 
         XCTAssertTrue(coach.start(.createBoard))
-        XCTAssertEqual(coach.session?.step, 3)
-        XCTAssertEqual(coach.session?.resumed, true)
+        XCTAssertEqual(coach.session?.step, 0, "the wizard's state cannot be rebuilt, so lesson 2 reopens at step 1")
+        XCTAssertEqual(coach.session?.resumed, true, "the RESUMED tag still shows")
         XCTAssertNotNil(coach.sandboxDatabase, "resume rebuilds the sandbox silently")
-        coach.handle(.sourcesSheetOpened)
+        coach.handle(.oneOffBoardStarted)
         XCTAssertEqual(coach.session?.resumed, false, "RESUMED tags only the first coach mark")
+        XCTAssertEqual(coach.progress.state(of: .createBoard), .inProgress(step: 3), "a saved place is never lowered")
     }
 
     func test_leavingAtTheFirstStepSavesNothing() throws {
@@ -209,19 +216,24 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertTrue(coach.start(.createTask))
         coach.requestLeave()
         coach.leave()
+        coach.stageDidDismiss()
         XCTAssertEqual(coach.progress, .empty)
     }
 
     func test_replayingADoneLessonStartsAtStepOneAndLeavingKeepsItDone() throws {
         var progress = TutorialProgress.empty
         progress.set(.createTask, .done)
-        let (coach, _) = try makeCoordinator(progress: progress)
+        let (coach, real) = try makeCoordinator(progress: progress)
         XCTAssertTrue(coach.start(.createTask))
         XCTAssertEqual(coach.session?.step, 0)
         XCTAssertEqual(coach.session?.resumed, false)
+        let versionBefore = try XCTUnwrap(real.fetchUser(id: userId)).version
         coach.handle(.tasksPlusTapped)
+        coach.handle(.normalTaskCreated)
         coach.leave()
+        coach.stageDidDismiss()
         XCTAssertEqual(coach.progress.state(of: .createTask), .done)
+        XCTAssertEqual(try XCTUnwrap(real.fetchUser(id: userId)).version, versionBefore, "replaying writes nothing")
     }
 
     func test_proLessonsDoNotStartAndOnlyOneSessionRuns() throws {
@@ -263,7 +275,151 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertFalse(coach.signals.isCompleting)
         XCTAssertTrue(coach.start(.createTask) == false)
         coach.leave()
+        coach.stageDidDismiss()
         XCTAssertTrue(coach.start(.createTask))
         XCTAssertFalse(coach.signals.sandboxed, "lesson 1 writes real tasks, so nothing is sandboxed")
+    }
+
+    // MARK: - Persistence on every step
+
+    func test_everyAdvanceSavesThePlaceWithoutLeaving() throws {
+        let (coach, real) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.createBoard))
+        let v0 = try XCTUnwrap(real.fetchUser(id: userId)).version
+        for event in Self.createBoardScript.prefix(3) { coach.handle(event) }
+        // An app kill here (no Leave) still keeps "Your place is saved".
+        XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 3))
+        XCTAssertEqual(try XCTUnwrap(real.fetchUser(id: userId)).version, v0 + 3, "advancing to steps 1, 2 and 3 each writes once; step 0 never does")
+        coach.leave()
+        XCTAssertEqual(try XCTUnwrap(real.fetchUser(id: userId)).version, v0 + 3, "leaving with nothing new writes nothing")
+    }
+
+    func test_aStageDismissedWithoutLeaveEndsTheSessionAndSavesThePlace() throws {
+        let (coach, real) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.completeBoard))
+        coach.handle(.editEntered)
+        coach.handle(.editSaved)
+        // e.g. Archive from the Edit BOARD section dismissed the cover.
+        coach.stageDidDismiss()
+        XCTAssertNil(coach.session)
+        XCTAssertNil(coach.sandboxDatabase)
+        XCTAssertEqual(try savedProgress(real).state(of: .completeBoard), .inProgress(step: 2))
+        XCTAssertTrue(coach.start(.createTask), "lessons stay startable afterwards")
+    }
+
+    // MARK: - Resume consistency (lesson 3 reseeds)
+
+    private func resumeFacts(saved: Int) throws -> (step: Int, stretchDone: Bool, read: CountValue, tidyDone: Bool) {
+        var progress = TutorialProgress.empty
+        progress.set(.completeBoard, .inProgress(step: saved))
+        let (coach, _) = try makeCoordinator(progress: progress)
+        XCTAssertTrue(coach.start(.completeBoard))
+        let session = try XCTUnwrap(coach.session)
+        let db = try XCTUnwrap(coach.sandboxDatabase)
+        let boardId = try XCTUnwrap(session.sampleBoardId)
+        let vm = BoardPlayViewModel(boardId: boardId, userId: userId, database: db)
+        vm.reload()
+        let deadline = Date().addingTimeInterval(30)
+        while !(vm.board?.id == boardId && vm.boardTasks.count == 9 && !vm.allTasks.isEmpty), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        func task(_ title: String) throws -> Task { try XCTUnwrap(vm.allTasks.first { $0.title == title }) }
+        return (
+            session.step,
+            vm.windowedCompletedValue(try task("Stretch")),
+            vm.windowedCountValue(try task("Read 20 pages")),
+            vm.windowedCompletedValue(try task("Tidy desk"))
+        )
+    }
+
+    func test_lessonThreeResumeReseedsTheBoardToTheSavedStepAndSkipsStepsWhoseControlIsGone() throws {
+        var facts = try resumeFacts(saved: 3)   // the Undo toast is gone -> step 5
+        XCTAssertEqual(facts.step, 4)
+        XCTAssertTrue(facts.stretchDone)
+        XCTAssertEqual(facts.read, 12)
+        facts = try resumeFacts(saved: 5)       // the sheet is closed -> reopen Read
+        XCTAssertEqual(facts.step, 4)
+        XCTAssertEqual(facts.read, 12)
+        facts = try resumeFacts(saved: 6)       // Read already 22/20, sheet closed
+        XCTAssertEqual(facts.step, 7)
+        XCTAssertEqual(facts.read, 22)
+        XCTAssertFalse(facts.tidyDone)
+        facts = try resumeFacts(saved: 9)       // the Bingo already happened
+        XCTAssertEqual(facts.step, 9)
+        XCTAssertTrue(facts.tidyDone)
+        facts = try resumeFacts(saved: 1)       // the Edit panel is not open
+        XCTAssertEqual(facts.step, 0)
+        XCTAssertFalse(facts.stretchDone)
+    }
+
+    func test_lessonOneAndTwoReopenAtStepOneWithTheResumedTag() throws {
+        for lesson in [TutorialLessonID.createTask, .createBoard] {
+            var progress = TutorialProgress.empty
+            progress.set(lesson, .inProgress(step: 3))
+            let (coach, _) = try makeCoordinator(progress: progress)
+            XCTAssertTrue(coach.start(lesson))
+            XCTAssertEqual(coach.session?.step, 0)
+            XCTAssertEqual(coach.session?.resumed, true)
+        }
+    }
+
+    // MARK: - Finale lights every incomplete square
+
+    func test_finaleLightsEveryIncompleteSquareWithTheRealRemainingCount() throws {
+        let (coach, _) = try makeCoordinator()
+        XCTAssertTrue(coach.start(.completeBoard))
+        for event: TutorialEvent in [.editEntered, .editSaved, .simpleSquareDone] { coach.handle(event) }
+        coach.next()
+        coach.handle(.countingSheetOpened)
+        coach.handle(.countLogged)
+        coach.next(); coach.next()
+        coach.handle(.bingoMomentClosed)
+        XCTAssertEqual(coach.session?.step, 9)
+        XCTAssertEqual(coach.currentText, "Two left. Complete them for a Greenlog.", "static fallback before the board reports")
+        coach.reportIncomplete(slots: [1, 4, 6])
+        XCTAssertEqual(coach.session?.litAnchors, [.square(1), .square(4), .square(6)], "a square the user undid is lit too")
+        XCTAssertEqual(coach.currentText, "Three left. Complete them for a Greenlog.")
+        coach.reportIncomplete(slots: [4, 6])
+        XCTAssertEqual(coach.currentText, "Two left. Complete them for a Greenlog.")
+        coach.reportIncomplete(slots: [6])
+        XCTAssertEqual(coach.currentText, "One left. Complete it for a Greenlog.")
+    }
+
+    /// Undo (the toast, the sheet strip) is usable throughout the lesson, so the
+    /// finale must reach the Greenlog even from an un-done square.
+    func test_undoThenFinaleStillReachesTheGreenlog() throws {
+        let sandbox = try AppDatabase.seedTutorialSandbox(lesson: .completeBoard, user: makeUser())
+        let db = sandbox.database
+        let boardId = try XCTUnwrap(sandbox.sampleBoardId)
+        let vm = BoardPlayViewModel(boardId: boardId, userId: userId, database: db)
+        vm.reload()
+        func wait(_ p: () -> Bool) { let d = Date().addingTimeInterval(30); while !p(), Date() < d { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) } }
+        wait { vm.board?.id == boardId && vm.boardTasks.count == 9 && !vm.allTasks.isEmpty }
+        func placement(_ title: String) throws -> (BoardTask, Task) {
+            let task = try XCTUnwrap(vm.allTasks.first { $0.title == title })
+            return (try XCTUnwrap(vm.boardTasks.first { $0.taskId == task.id }), task)
+        }
+        func settle() { wait { !vm.isProcessing } }
+
+        vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
+        let (readBT, read) = try placement("Read 20 pages")
+        vm.handleCountingTap(boardTask: readBT, task: read, amount: 10, persistAsDefault: false); settle()
+        vm.handleNormalTap(boardTask: try placement("Tidy desk").0); settle()
+        // Undo Read (the sheet's Undo strip) and Stretch (the toast's Undo).
+        vm.handleCountingDecrement(boardTask: readBT, task: try placement("Read 20 pages").1, amount: 10, persistAsDefault: false); settle()
+        vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
+        wait { vm.tutorialIncompleteSlots().count >= 4 }
+        let slots = vm.tutorialIncompleteSlots()
+        XCTAssertEqual(Set(slots), [TutorialCatalog.SampleSlot.stretch, TutorialCatalog.SampleSlot.read, TutorialCatalog.SampleSlot.journal, TutorialCatalog.SampleSlot.noSugar])
+
+        // The finale lights all of them; finishing every one reaches the Greenlog.
+        vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
+        vm.handleCountingTap(boardTask: readBT, task: try placement("Read 20 pages").1, amount: 8, persistAsDefault: false); settle()
+        vm.handleNormalTap(boardTask: try placement("Journal").0); settle()
+        vm.handleNormalTap(boardTask: try placement("No sugar").0); settle()
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: boardId)).completedTasks, 9)
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: boardId)).status, .completed)
+        wait { vm.tutorialIncompleteSlots().isEmpty }
+        XCTAssertTrue(vm.tutorialIncompleteSlots().isEmpty)
     }
 }

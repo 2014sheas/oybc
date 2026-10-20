@@ -223,7 +223,9 @@ extension BoardPlayView {
             summary: "\(formatCount(after, kind: before.kind)) of \(formatCount(before.goal, kind: before.kind))",
             finishedSquare: before.goal > 0 && after >= before.goal
         )
-        coach.handle(.countLogged)
+        // Only a log that finishes the square moves the lesson on; a smaller
+        // chip keeps the step so the square can be finished.
+        if after >= before.goal, before.goal > 0 { coach.handle(.countLogged) }
     }
 }
 

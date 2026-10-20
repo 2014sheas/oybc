@@ -204,6 +204,7 @@ struct BoardWizardTasksStepView: View {
     @State var showSourceSheet = false
     @Environment(\.tutorialSignals) private var tutorialSignals
     @Environment(\.tutorialCoach) var tutorialCoach
+    @Environment(\.appDatabase) private var appDatabase
 
     /// The pulled source a ✕ (or a sheet un-toggle) asked to remove while it
     /// still carried configuration — the remove-confirm's subject (owner
@@ -509,6 +510,7 @@ struct BoardWizardTasksStepView: View {
                         AnyView(
                             RisoPoolRowEditorView(
                                 task: task,
+                                database: appDatabase,
                                 draft: $editDraft,
                                 libraryTasks: pickerLibraryTasks,
                                 counterRootTasks: Array(effectiveTaskById.values),

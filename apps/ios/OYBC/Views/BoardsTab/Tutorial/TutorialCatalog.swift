@@ -88,6 +88,8 @@ struct TutorialStep: Equatable {
     var closesSquareSheet: Bool = false
     /// The lit control is the Undo toast: it stays up until Next (lesson 3).
     var holdsToast: Bool = false
+    /// The finale lights EVERY still-incomplete square, not fixed anchors.
+    var litsIncompleteSquares: Bool = false
     /// Place the coach mark above the lit controls (the default is below).
     var prefersAbove: Bool = false
     /// Copy that depends on what the user just did; `text` is the fallback.
@@ -99,6 +101,8 @@ struct TutorialStep: Equatable {
         case loggedSummary
         /// Lesson 2: "{Fitness} fills {eight} squares. Tap Next."
         case poolFills
+        /// Lesson 3 finale: "{Two} left. Complete them for a Greenlog."
+        case remainingSquares
     }
 }
 
@@ -154,6 +158,23 @@ enum TutorialCatalog {
         }
     }
 
+    /// Where a saved lesson reopens. The sandbox lesson 3 can reseed its board to
+    /// the state a step implies, so it resumes at (or just after) the saved step,
+    /// skipping steps whose control is no longer on screen (the toast, the
+    /// closed sheets, the Edit panel). Lessons 1 and 2 cannot rebuild their
+    /// mid-flow screens (an open sheet, the wizard's state), so they reopen at
+    /// step 1 (the RESUMED tag still shows).
+    static func resumeStep(lesson: TutorialLessonID, saved: Int) -> Int {
+        guard lesson == .completeBoard else { return 0 }
+        switch saved {
+        case 1: return 0   // the Edit panel is not open
+        case 3: return 4   // the Undo toast is gone
+        case 5: return 4   // the square sheet is closed: open Read again
+        case 6: return 7   // the sheet is closed, Read is already at 22/20
+        default: return saved
+        }
+    }
+
     /// A Pro placeholder: no script, no glyph.
     private static func pro(_ id: TutorialLessonID, _ title: String) -> TutorialLessonInfo {
         TutorialLessonInfo(id: id, title: title, glyph: nil, completeSubtitle: "", steps: [])
@@ -205,7 +226,7 @@ enum TutorialCatalog {
         TutorialStep(anchors: [.undoStrip], text: "22 of 20. The square is done; Undo stays here.", advance: .next, onSheet: true, dynamic: .loggedSummary),
         TutorialStep(anchors: [.square(SampleSlot.tidy)], text: "Hold a square for quick actions.", advance: .next, closesSquareSheet: true),
         TutorialStep(anchors: [.square(SampleSlot.tidy)], text: "Complete this square to finish the row.", advance: .action(.bingoMomentClosed)),
-        TutorialStep(anchors: [.square(SampleSlot.journal), .square(SampleSlot.noSugar)], text: "Two left. Complete them for a Greenlog.", advance: .action(.greenlogMomentClosed)),
+        TutorialStep(anchors: [.square(SampleSlot.journal), .square(SampleSlot.noSugar)], text: "Two left. Complete them for a Greenlog.", advance: .action(.greenlogMomentClosed), litsIncompleteSquares: true, dynamic: .remainingSquares),
     ]
 }
 

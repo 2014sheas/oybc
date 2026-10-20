@@ -76,6 +76,7 @@ extension BoardPlayView {
                 boardId: b.id,
                 onDismiss: { showShareBoardSheet = false }
             )
+            .tutorialExitGuard()
             .presentationDetents([.medium, .large])
         }
     }

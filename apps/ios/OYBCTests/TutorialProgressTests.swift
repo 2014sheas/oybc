@@ -107,7 +107,11 @@ final class TutorialProgressTests: XCTestCase {
         },"cardDismissed":"yes"}
         """
         let progress = try JSONDecoder().decode(TutorialProgress.self, from: Data(json.utf8))
-        XCTAssertEqual(progress.lessons, ["e": .done, "createBoard": .inProgress(step: 2)])
+        // Malformed KNOWN entries drop; an unknown status stays opaque.
+        XCTAssertEqual(progress.lessons["e"], .done)
+        XCTAssertEqual(progress.lessons["createBoard"], .inProgress(step: 2))
+        XCTAssertNotNil(progress.lessons["c"])
+        XCTAssertNil(progress.lessons["a"]); XCTAssertNil(progress.lessons["b"]); XCTAssertNil(progress.lessons["d"])
         XCTAssertFalse(progress.cardDismissed, "a non-boolean dismissal falls back to false")
     }
 
@@ -118,6 +122,63 @@ final class TutorialProgressTests: XCTestCase {
         XCTAssertEqual(progress.doneCount, 0, "unknown ids never count toward the nine")
         let again = try JSONDecoder().decode(TutorialProgress.self, from: JSONEncoder().encode(progress))
         XCTAssertEqual(again.lessons["someFutureLesson"], .done, "an older client round-trips a newer lesson")
+    }
+
+    func test_unknownStatusRoundTripsVerbatimAndCountsAsNotStarted() throws {
+        let json = #"{"lessons":{"createTask":{"status":"paused","note":"x","n":2}},"cardDismissed":false}"#
+        let progress = try JSONDecoder().decode(TutorialProgress.self, from: Data(json.utf8))
+        XCTAssertEqual(progress.state(of: .createTask), .notStarted)
+        let wire = try encoded(progress)
+        let lesson = try XCTUnwrap((wire["lessons"] as? [String: [String: Any]])?["createTask"])
+        XCTAssertEqual(lesson["status"] as? String, "paused")
+        XCTAssertEqual(lesson["note"] as? String, "x")
+        XCTAssertEqual(lesson["n"] as? Int, 2)
+    }
+
+    // MARK: - Union (twin of unionTutorialProgress)
+
+    func test_union_doneBeatsInProgressAndHigherStepWinsInBothDirections() {
+        var a = TutorialProgress.empty
+        a.set(.createTask, .done); a.set(.createBoard, .inProgress(step: 2)); a.set(.completeBoard, .inProgress(step: 5))
+        var b = TutorialProgress.empty
+        b.set(.createTask, .inProgress(step: 4)); b.set(.createBoard, .inProgress(step: 6)); b.set(.completeBoard, .inProgress(step: 1))
+        for merged in [TutorialProgress.union(local: a, incoming: b), TutorialProgress.union(local: b, incoming: a)] {
+            XCTAssertEqual(merged.state(of: .createTask), .done)
+            XCTAssertEqual(merged.state(of: .createBoard), .inProgress(step: 6))
+            XCTAssertEqual(merged.state(of: .completeBoard), .inProgress(step: 5))
+        }
+    }
+
+    func test_union_keepsOneSidedLessonsOrsTheDismissalAndPrefersKnownOverOpaque() throws {
+        var a = TutorialProgress.empty
+        a.set(.createTask, .done)
+        var b = TutorialProgress.empty
+        b.set(.createBoard, .inProgress(step: 1)); b.cardDismissed = true
+        let merged = TutorialProgress.union(local: a, incoming: b)
+        XCTAssertEqual(merged.doneCount, 1)
+        XCTAssertEqual(merged.state(of: .createBoard), .inProgress(step: 1))
+        XCTAssertTrue(merged.cardDismissed)
+
+        let opaque = try JSONDecoder().decode(TutorialProgress.self, from: Data(#"{"lessons":{"createTask":{"status":"paused"}}}"#.utf8))
+        XCTAssertEqual(TutorialProgress.union(local: opaque, incoming: a).state(of: .createTask), .done)
+        XCTAssertNotNil(TutorialProgress.union(local: opaque, incoming: .empty).lessons["createTask"])
+    }
+
+    func test_preferencesHelpers_readAndReplaceProgressInBothShapes() throws {
+        var progress = TutorialProgress.empty
+        progress.set(.createTask, .done)
+        var prefs = UserPreferences.defaults
+        prefs.tutorialProgress = progress
+        let json = try XCTUnwrap(User.encodePreferences(prefs))
+        XCTAssertEqual(TutorialProgress.fromPreferences(json), progress)
+        let dict = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)))
+        XCTAssertEqual(TutorialProgress.fromPreferences(dict), progress)
+        XCTAssertNil(TutorialProgress.fromPreferences(nil))
+        var other = TutorialProgress.empty
+        other.set(.createBoard, .done)
+        let replaced = try XCTUnwrap(TutorialProgress.replacing(in: json, with: other))
+        XCTAssertEqual(TutorialProgress.fromPreferences(replaced), other)
+        XCTAssertEqual(replaced["weekStartDay"] as? String, "monday", "other preference fields are kept")
     }
 
     func test_decode_emptyOrWrongContainerYieldsEmpty() throws {

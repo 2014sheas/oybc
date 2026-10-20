@@ -179,6 +179,7 @@ final class TutorialSandboxTests: XCTestCase {
         XCTAssertTrue(coach.start(.createBoard))
         let sandbox2 = try XCTUnwrap(coach.sandboxDatabase)
         XCTAssertFalse(sandbox2 === real)
+        XCTAssertTrue(sandbox2 !== AppDatabase.shared, "a lesson's injected database is never the app singleton")
         XCTAssertEqual(try rowCounts(sandbox2)["pools"], 3)
         let ts = AppDatabase.currentTimestamp()
         try sandbox2.saveTask(Task(
@@ -186,6 +187,7 @@ final class TutorialSandboxTests: XCTestCase {
             totalCompletions: 0, totalInstances: 0, createdAt: ts, updatedAt: ts, version: 1, isDeleted: false
         ))
         coach.leave()
+        coach.stageDidDismiss()
 
         // Lesson 3: play the board in the sandbox.
         XCTAssertTrue(coach.start(.completeBoard))
@@ -197,7 +199,9 @@ final class TutorialSandboxTests: XCTestCase {
         vm.handleNormalTap(boardTask: try XCTUnwrap(vm.boardTasks.first))
         XCTAssertTrue(waitUntil { !vm.isProcessing })
         XCTAssertGreaterThan(try rowCounts(sandbox3)["board_tasks"] ?? 0, 0)
+        XCTAssertTrue(sandbox3 !== AppDatabase.shared)
         coach.leave()
+        coach.stageDidDismiss()
 
         XCTAssertEqual(try rowCounts(real), before, "no board, task, pool, event or sync item reached the real database")
     }
@@ -209,6 +213,7 @@ final class TutorialSandboxTests: XCTestCase {
         XCTAssertTrue(coach.start(.createTask))
         XCTAssertNil(coach.sandboxDatabase, "lesson 1 writes the two real tasks to the user's own library")
         coach.leave()
+        coach.stageDidDismiss()
     }
 
     func test_eachSandboxIsIndependent() throws {
@@ -220,15 +225,13 @@ final class TutorialSandboxTests: XCTestCase {
 
     func test_arrivalStoreUsesAThrowawaySuiteForASandbox() throws {
         let sandbox = try AppDatabase.makeTutorialSandbox()
-        let real = try AppDatabase.makeTestInstance()
-        // Neither is the app singleton, so both take the throwaway suite; the
-        // singleton alone takes the standard store.
+        // Only the app singleton takes the standard store; a sandbox gets the
+        // throwaway suite.
         let sandboxStore = CounterArrivalStore.forDatabase(sandbox)
         sandboxStore.save(boardId: "tut-board", snapshot: ["t": 1])
         XCTAssertEqual(sandboxStore.lastSeen(boardId: "tut-board"), ["t": 1])
         XCTAssertEqual(CounterArrivalStore().lastSeen(boardId: "tut-board"), [:], "the user's own store is untouched")
         UserDefaults(suiteName: CounterArrivalStore.tutorialSuiteName)?
             .removePersistentDomain(forName: CounterArrivalStore.tutorialSuiteName)
-        _ = real
     }
 }

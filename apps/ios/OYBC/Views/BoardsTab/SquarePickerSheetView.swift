@@ -140,6 +140,7 @@ struct SquarePickerSheetView: View {
                 }
             }
         }
+        .tutorialExitGuard()
         .presentationDetents([.medium, .large])
         .presentationCornerRadius(22)
         .presentationBackground(Color.risoPaper)
