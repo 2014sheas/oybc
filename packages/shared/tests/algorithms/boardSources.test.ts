@@ -29,6 +29,7 @@ import {
   type Task,
   computeAchievablePoolSize,
   buildCounterFamilyMap,
+  restrictToResolvable,
   sourceConfiguration,
   sourceHasConfiguration,
   removeSourceLossSentence,
@@ -517,6 +518,110 @@ describe('counter-family exclusivity', () => {
       t('plain', TaskType.NORMAL),
     ]);
     expect(map).toEqual({ root: 'root', derived: 'root' });
+  });
+
+  test('buildCounterFamilyMap puts a unit task in its counter root\'s family, whatever its type', () => {
+    const t = (id: string, type: TaskType, over: Partial<Task> = {}): Task =>
+      ({
+        id,
+        userId: 'u',
+        title: id,
+        type,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: 'now',
+        updatedAt: 'now',
+        version: 1,
+        isDeleted: false,
+        ...over,
+      }) as Task;
+    const map = buildCounterFamilyMap([
+      t('root', TaskType.COUNTING),
+      t('copy', TaskType.COUNTING, { sharedCounterId: 'root' }),
+      t('unit-normal', TaskType.NORMAL, { countsTowardCounterId: 'root', countsTowardSince: 'now' }),
+      t('unit-counting', TaskType.COUNTING, { countsTowardCounterId: 'root', countsTowardSince: 'now' }),
+      t('unit-compound', TaskType.COMPOUND, { countsTowardCounterId: 'root', countsTowardSince: 'now' }),
+      t('cleared', TaskType.NORMAL, { countsTowardCounterId: null }),
+    ]);
+    expect(map).toEqual({
+      root: 'root',
+      copy: 'root',
+      'unit-normal': 'root',
+      'unit-counting': 'root',
+      'unit-compound': 'root',
+    });
+  });
+
+  test('a unit task and a member of its counter never share a board; the hand-added one wins', () => {
+    const fam = buildCounterFamilyMap([
+      {
+        id: 'root', userId: 'u', title: 'root', type: TaskType.COUNTING, isCompleted: false,
+        totalCompletions: 0, totalInstances: 0, createdAt: 'now', updatedAt: 'now', version: 1, isDeleted: false,
+      } as Task,
+      {
+        id: 'copy', userId: 'u', title: 'copy', type: TaskType.COUNTING, sharedCounterId: 'root', isCompleted: false,
+        totalCompletions: 0, totalInstances: 0, createdAt: 'now', updatedAt: 'now', version: 1, isDeleted: false,
+      } as Task,
+      {
+        id: 'unit', userId: 'u', title: 'unit', type: TaskType.NORMAL, countsTowardCounterId: 'root',
+        countsTowardSince: 'now', isCompleted: false,
+        totalCompletions: 0, totalInstances: 0, createdAt: 'now', updatedAt: 'now', version: 1, isDeleted: false,
+      } as Task,
+    ]);
+    const supplies = [pool(['copy', 'a', 'b', 'c'])];
+    for (let seed = 1; seed <= 25; seed += 1) {
+      const result = selectBoardTasks({
+        supplies,
+        manualTaskIds: ['unit', 'd'],
+        cellCount: 5,
+        rng: makeSeededRng(seed),
+        counterFamilyByTaskId: fam,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.taskIds).toContain('unit');
+        expect(result.taskIds).not.toContain('copy');
+      }
+    }
+    expect(
+      computeSourceCapacity(supplies, ['unit', 'd'], fam).capacity,
+    ).toBe(5);
+  });
+});
+
+describe('restrictToResolvable', () => {
+  const supply = (ids: string[]): BoardSourceSupply => ({
+    source: { sourceId: 'B', kind: 'board', min: 0, max: 4, excludedTaskIds: [], filter: 'todo' },
+    supplyTaskIds: ids,
+    goalByTaskId: { b: 3 },
+  });
+
+  test('drops ids the placement cannot resolve from both layers, keeping order and goals', () => {
+    const out = restrictToResolvable([supply(['a', 'gone', 'b'])], ['m1', 'gone-2', 'm2'], new Set(['a', 'b', 'm1', 'm2']));
+    expect(out.supplies[0].supplyTaskIds).toEqual(['a', 'b']);
+    expect(out.supplies[0].goalByTaskId).toEqual({ b: 3 });
+    expect(out.supplies[0].source.max).toBe(4);
+    expect(out.manualTaskIds).toEqual(['m1', 'm2']);
+  });
+
+  test('an empty resolvable set means "not loaded" and restricts nothing', () => {
+    const supplies = [supply(['a', 'gone'])];
+    const out = restrictToResolvable(supplies, ['m1'], new Set());
+    expect(out.supplies).toBe(supplies);
+    expect(out.manualTaskIds).toEqual(['m1']);
+  });
+
+  test('the gate over restricted inputs equals what the deal can place', () => {
+    const resolvable = new Set(['a', 'b', 'c', 'm1', 'm2']);
+    const raw = { supplies: [supply(['a', 'gone', 'b', 'c'])], manual: ['m1', 'gone-2', 'm2'] };
+    const { supplies, manualTaskIds } = restrictToResolvable(raw.supplies, raw.manual, resolvable);
+    const capacity = computeSourceCapacity(supplies, manualTaskIds).capacity;
+    expect(capacity).toBe(5);
+    expect(computeSourceCapacity(raw.supplies, raw.manual).capacity).toBe(7);
+    const deal = selectBoardTasks({ supplies, manualTaskIds, cellCount: 5, rng: makeSeededRng(3) });
+    expect(deal.ok).toBe(true);
+    if (deal.ok) expect(deal.taskIds.every((id) => resolvable.has(id))).toBe(true);
   });
 });
 

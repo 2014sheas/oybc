@@ -31,7 +31,8 @@ struct RisoRangeSlider: View {
 
     private enum Handle { case min, max }
 
-    private var effectiveMax: Int { maxValue ?? available }
+    /// A stored max above the live count clamps to it (see `RisoSourceRowView.effectiveMax`).
+    private var effectiveMax: Int { min(maxValue ?? available, available) }
 
     var body: some View {
         GeometryReader { geo in

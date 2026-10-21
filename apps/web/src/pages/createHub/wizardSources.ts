@@ -11,6 +11,7 @@
 import {
   applyMemberRules,
   computeSourceCapacity,
+  restrictToResolvable,
   poolSourceSupplyById,
   availableSupplyIds,
   resolveSourceAvailable,
@@ -26,6 +27,7 @@ import {
   prunePoolMemberVary,
   withEffectiveMemberRules,
 } from '@oybc/shared';
+import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 
 /**
  * §Member rules (B3, RC7) — the compound children a Split-up expansion can
@@ -191,13 +193,51 @@ export function sourceCapacity(
   pinnedTaskId?: string,
   childrenByCompoundId: SupplyChildrenMap = {},
   tasksById: SupplyTasksMap = {},
+  resolvableTaskIds: ReadonlySet<string> = EMPTY_RESOLVABLE,
 ): number {
-  return computeSourceCapacity(
+  // Only ids the placement lookup can resolve count (`restrictToResolvable`):
+  // a cached supply or a stale hand-add naming a task the library no longer
+  // holds must not inflate the gate past what the deal can place.
+  const restricted = restrictToResolvable(
     algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById),
     Array.from(manualTaskIds),
+    resolvableTaskIds,
+  );
+  return computeSourceCapacity(
+    restricted.supplies,
+    restricted.manualTaskIds,
     counterFamilyByTaskId,
     pinnedTaskId ?? undefined,
   ).capacity;
+}
+
+/** "Not loaded" — `restrictToResolvable` restricts nothing for an empty set. */
+const EMPTY_RESOLVABLE: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Every id the placement lookup can resolve — the ONE definition the gate
+ * (`useWizardDerived.capacity`) and the deal (`buildWizardPlacement`) share:
+ * the live library plus this session's pending tasks and their children.
+ * While the library has not loaded (`tasksById` empty) it returns the empty
+ * "not loaded" set so nothing is restricted — a pending task alone must not
+ * read as "only the pending task resolves". iOS twin:
+ * `BoardWizardViewModel.resolvableTaskIds`.
+ *
+ * @param tasksById - The live library map (`useTaskLibrary.taskMap`).
+ * @param pendingTasks - This session's pending (not-yet-saved) tasks.
+ * @returns The resolvable id set, or the empty "not loaded" set.
+ */
+export function resolvableUniverse(
+  tasksById: Record<string, Task>,
+  pendingTasks: ReadonlyMap<string, PendingTaskPayload>,
+): ReadonlySet<string> {
+  const ids = new Set<string>(Object.keys(tasksById));
+  if (ids.size === 0) return EMPTY_RESOLVABLE;
+  for (const payload of pendingTasks.values()) {
+    ids.add(payload.task.id);
+    for (const child of payload.childTasks) ids.add(child.id);
+  }
+  return ids;
 }
 
 /**

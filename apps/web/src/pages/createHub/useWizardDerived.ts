@@ -26,7 +26,7 @@ import {
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { BoardWizardDerived, WizardStep } from './boardWizardTypes';
-import { sourceCapacity, type SupplyInfoMap } from './wizardSources';
+import { resolvableUniverse, sourceCapacity, type SupplyInfoMap } from './wizardSources';
 
 export interface UseWizardDerivedArgs {
   /** The raw (untrimmed) board name. */
@@ -124,6 +124,16 @@ export function useWizardDerived({
   // deterministic dry-run of the actual fill (family rule + cap overlap
   // included, the CHOSEN center pinned), so gate-passed ⇒ the deal fills.
   // §Member rules (B3, RC7) — a Split-up member counts as its parts.
+  // Every id the placement lookup (`buildWizardPlacement`'s `libraryById`)
+  // can resolve: the live library plus this session's pending tasks and
+  // their children. The gate counts nothing outside it (owner report
+  // 2026-10-21: a square dealt from a cached supply but gone from the
+  // library previewed empty behind a green gate).
+  const resolvableTaskIds = useMemo<ReadonlySet<string>>(
+    () => resolvableUniverse(tasksById, pendingTasks),
+    [tasksById, pendingTasks],
+  );
+
   const capacity = useMemo(
     () =>
       sourceCapacity(
@@ -134,10 +144,11 @@ export function useWizardDerived({
         centerMode ? (centerTaskId ?? undefined) : undefined,
         childrenByCompoundId,
         tasksById,
+        resolvableTaskIds,
       ),
     [
       sources, supplyInfoBySourceId, manualTaskIds, counterFamilyByTaskId,
-      centerMode, centerTaskId, childrenByCompoundId, tasksById,
+      centerMode, centerTaskId, childrenByCompoundId, tasksById, resolvableTaskIds,
     ],
   );
 
@@ -146,9 +157,12 @@ export function useWizardDerived({
     if (centerMode) {
       if (centerTaskId === null) return false;
       if (!selectedTaskIds.has(centerTaskId)) return false;
+      // A CHOSEN centre the placement cannot resolve (deleted mid-session)
+      // would be silently replaced by the deal — not a valid centre.
+      if (resolvableTaskIds.size > 0 && !resolvableTaskIds.has(centerTaskId)) return false;
     }
     return true;
-  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
+  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId, resolvableTaskIds]);
 
   const step2ValidationMessage = useMemo<string | null>(() => {
     // Don't accuse the user of a shortfall we can't actually measure yet

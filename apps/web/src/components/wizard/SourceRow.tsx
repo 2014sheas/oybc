@@ -92,7 +92,10 @@ export function SourceRow({
   onSetPartVary,
 }: SourceRowProps): React.ReactElement {
   const isDefaultRange = source.min === 0 && source.max === null;
-  const effectiveMax = source.max ?? availableCount;
+  // A stored max above the live available count (excludes / the done-filter
+  // shrank the supply after it was set) reads as the available count: the
+  // fill honours `min(max, available)`, and so does the row.
+  const effectiveMax = Math.min(source.max ?? availableCount, availableCount);
   const rangeText =
     source.min === effectiveMax ? `${source.min}` : `${source.min}–${effectiveMax}`;
 
@@ -246,11 +249,19 @@ function buildSubtitle(
     ).length;
     if (excludedCount > 0) parts.push(`${excludedCount} excluded`);
   } else if (source.filter === 'todo') {
-    const notDone = availableSupplyIds(source, supply.rawSupplyTaskIds, supply.doneTaskIds).length;
-    parts.push(`${notDone} not done`);
+    // "N not done" counts what the row can actually supply: excluded
+    // squares leave the count and are named, like a pool's "k excluded".
+    const notDoneIds = availableSupplyIds(source, supply.rawSupplyTaskIds, supply.doneTaskIds);
+    const excludedCount = notDoneIds.filter((id) => source.excludedTaskIds.includes(id)).length;
+    parts.push(`${notDoneIds.length - excludedCount} not done`);
+    if (excludedCount > 0) parts.push(`${excludedCount} excluded`);
   } else {
     const total = supply.rawSupplyTaskIds.length;
     parts.push(`${total} square${total === 1 ? '' : 's'} · ${supply.doneTaskIds.size} done`);
+    const excludedCount = source.excludedTaskIds.filter((id) =>
+      supply.rawSupplyTaskIds.includes(id),
+    ).length;
+    if (excludedCount > 0) parts.push(`${excludedCount} excluded`);
   }
   if (!isDefaultRange) parts.push(`${rangeText} on the board`);
   return parts.join(' · ');

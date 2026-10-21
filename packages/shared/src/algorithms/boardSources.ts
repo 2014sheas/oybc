@@ -443,17 +443,62 @@ function runSelection(
  * Task id → counter-family key for {@link selectBoardTasks} /
  * {@link computeSourceCapacity}: counting tasks map to
  * `sharedCounterId ?? id` (a root and every version derived from it share
- * one family); other types carry no family constraint and get no entry.
+ * one family), and a UNIT task — any type carrying `countsTowardCounterId`
+ * (docs/SHARED_COUNTER_SETTINGS.md §3) — maps to that counter's root, so it
+ * is exclusive with the counter's own squares: completing it credits the
+ * counter, and a counter square at goal 1 would tick in the same tap
+ * (owner report 2026-10-21). Other tasks carry no family constraint and get
+ * no entry.
  */
 export function buildCounterFamilyMap(
   tasks: Iterable<Task>,
 ): Record<string, string> {
   const map: Record<string, string> = {};
   for (const task of tasks) {
+    if (task.countsTowardCounterId != null) {
+      map[task.id] = task.countsTowardCounterId;
+      continue;
+    }
     if (task.type !== TaskType.COUNTING) continue;
     map[task.id] = task.sharedCounterId ?? task.id;
   }
   return map;
+}
+
+/**
+ * The deal's inputs restricted to ids the placement can resolve — the
+ * wizard's live library plus its pending (not-yet-saved) tasks and their
+ * children. A pulled board's supply is cached at pull time while the
+ * library keeps reloading, so a task deleted mid-session (a sync pull, a
+ * cascade delete elsewhere) could otherwise be counted by the gate and then
+ * dropped by the placement lookup, leaving a square empty with a green
+ * gate (owner report 2026-10-21). Filtering BOTH the capacity dry-run and
+ * the deal through this keeps "gate passed ⇒ the board fills" true by
+ * construction.
+ *
+ * An EMPTY `resolvableTaskIds` means "not loaded yet" and restricts
+ * nothing — a wizard that has not received its library cannot know what is
+ * unresolvable, and reading it as "nothing resolves" would zero the gate
+ * until the load lands.
+ *
+ * @param supplies - The expanded supplies (order preserved).
+ * @param manualTaskIds - The hand-added layer (order preserved).
+ * @param resolvableTaskIds - Every id the placement lookup can resolve.
+ * @returns The same shapes with unresolvable ids dropped.
+ */
+export function restrictToResolvable<S extends BoardSourceSupply>(
+  supplies: S[],
+  manualTaskIds: string[],
+  resolvableTaskIds: ReadonlySet<string>,
+): { supplies: S[]; manualTaskIds: string[] } {
+  if (resolvableTaskIds.size === 0) return { supplies, manualTaskIds };
+  return {
+    supplies: supplies.map((supply) => ({
+      ...supply,
+      supplyTaskIds: supply.supplyTaskIds.filter((id) => resolvableTaskIds.has(id)),
+    })),
+    manualTaskIds: manualTaskIds.filter((id) => resolvableTaskIds.has(id)),
+  };
 }
 
 /**

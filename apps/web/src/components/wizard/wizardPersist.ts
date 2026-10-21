@@ -6,11 +6,12 @@ import {
   getTimeframeBoundaries,
   placeBoard,
   resolveSourceAvailable,
+  restrictToResolvable,
   selectBoardTasks,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
-import { algorithmSupplies } from '../../pages/createHub/wizardSources';
+import { algorithmSupplies, resolvableUniverse } from '../../pages/createHub/wizardSources';
 import { freezeTypedManualTargets } from '../../pages/createHub/wizardPlacementParamsLogic';
 import {
   createRecurringBoardTemplate,
@@ -86,6 +87,11 @@ export function buildWizardPlacement(
   const libraryById = new Map<string, Task>(library.allTasks.map((t) => [t.id, t]));
   for (const [id, payload] of pendingMap) {
     libraryById.set(id, payload.task);
+    // A pending compound's children are placeable too (the Library sheet
+    // offers them as sub-task chips) — without them here a hand-added child
+    // was counted by the gate and dropped at placement (owner report
+    // 2026-10-21), leaving a square empty.
+    for (const child of payload.childTasks) libraryById.set(child.id, child);
   }
 
   // Board Sources P4 — when sources are in play, the pick honors each
@@ -102,11 +108,18 @@ export function buildWizardPlacement(
     // supplies, so a split compound offers its parts as separate squares.
     // `libraryById` already merges the live library with this session's
     // pending tasks, which is exactly the universe the expansion reads.
-    const supplies = algorithmSupplies(
-      sources,
-      controller.supplyInfoBySourceId,
-      controller.childrenByCompoundId ?? {},
-      Object.fromEntries(libraryById),
+    // Restricted to the ONE resolvable universe `useWizardDerived.capacity`
+    // gates on (`resolvableUniverse`), so the gate's dry-run and this deal
+    // run over identical inputs (`restrictToResolvable`).
+    const { supplies, manualTaskIds } = restrictToResolvable(
+      algorithmSupplies(
+        sources,
+        controller.supplyInfoBySourceId,
+        controller.childrenByCompoundId ?? {},
+        Object.fromEntries(libraryById),
+      ),
+      Array.from(controller.manualTaskIds),
+      resolvableUniverse(library.taskMap, pendingMap),
     );
     // Counter-family exclusivity (2026-09-08): the pick never places two
     // members of one shared-counter family, and a CHOSEN center is pinned
@@ -118,7 +131,7 @@ export function buildWizardPlacement(
         : undefined;
     const selection = selectBoardTasks({
       supplies,
-      manualTaskIds: Array.from(controller.manualTaskIds),
+      manualTaskIds,
       cellCount: controller.tasksRequired,
       randomize: isRandomized,
       counterFamilyByTaskId,

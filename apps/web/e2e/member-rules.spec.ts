@@ -157,6 +157,32 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await seedSourceBoard(page);
   });
 
+  test('excluding squares updates the row counts and clamps a stored max (owner report 2026-10-21)', async ({
+    page,
+  }) => {
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    const row = (pattern: RegExp) => page.getByRole('button', { name: pattern });
+    await row(/^Last Week Board, 8 not done/).click();
+
+    // Store a numeric max (7) through the max thumb.
+    await page.getByRole('slider', { name: 'Maximum on the board' }).focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(row(/^Last Week Board, 8 not done · 0–7 on the board/)).toBeVisible();
+
+    // Excluding two squares: the count follows, the excludes are named, and
+    // the stored 7 reads as the 6 that are left (the fill honours min(7, 6)).
+    await page.getByRole('button', { name: 'Exclude Filler 1 for this board' }).click();
+    await page.getByRole('button', { name: 'Exclude Filler 2 for this board' }).click();
+    await expect(row(/^Last Week Board, 6 not done · 2 excluded · 0–6 on the board/)).toBeVisible();
+    await expect(page.getByText('of 6', { exact: true })).toBeVisible();
+    await page.screenshot({ path: '.playwright-mcp/sources-excluded-counts.png' });
+
+    // UNDO one: the stored 7 is intact and reads as 7 again.
+    await page.getByRole('button', { name: 'Undo excluding Filler 1' }).click();
+    await expect(row(/^Last Week Board, 7 not done · 1 excluded · 0–7 on the board/)).toBeVisible();
+  });
+
   test('a counting member gets the compact stepper carrying its goal suffix, and the dice lights a range line', async ({
     page,
   }) => {

@@ -43,7 +43,8 @@ export function RangeSlider({
   const activeHandleRef = useRef<'min' | 'max' | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const effectiveMax = maxValue ?? available;
+  // A stored max above the live count clamps to it (see `SourceRow.effectiveMax`).
+  const effectiveMax = Math.min(maxValue ?? available, available);
   const KNOB = 22;
 
   /** Stop → percentage position (centers span [KNOB/2, width−KNOB/2]). */

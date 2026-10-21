@@ -63,7 +63,15 @@ struct RisoSourceRowView: View {
     @Environment(\.tutorialSignals) private var tutorialSignals
 
     private var isDefaultRange: Bool { source.min == 0 && source.max == nil }
-    private var effectiveMax: Int { source.max ?? availableCount }
+    /// A stored max above the live available count (excludes / the
+    /// done-filter shrank the supply after it was set) reads as the
+    /// available count: the fill honours `min(max, available)`, and so does
+    /// the row. Web twin: `SourceRow.effectiveMax`.
+    private var effectiveMax: Int { Self.effectiveMax(source: source, availableCount: availableCount) }
+
+    static func effectiveMax(source: BoardSource, availableCount: Int) -> Int {
+        Swift.min(source.max ?? availableCount, availableCount)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,7 +105,7 @@ struct RisoSourceRowView: View {
                 Text(subtitle)
                     .font(.risoBody(10.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
-                    .lineLimit(1)
+                    .lineLimit(2) // the counts wrap rather than truncate ("… · 1 excluded · 1–2 on the board")
             }
             Spacer(minLength: 6)
             Image(systemName: "chevron.right")
@@ -154,9 +162,18 @@ struct RisoSourceRowView: View {
     /// source with no board for the window being built — "No board for this
     /// window yet" (owner ruling 2026-09-24). Web twin: `buildSubtitle`.
     private var subtitle: String {
+        Self.subtitle(source: source, supply: supply, availableCount: availableCount)
+    }
+
+    /// The row subtitle (web twin: `buildSubtitle`). Static so the counts are
+    /// unit-testable: excluded squares leave a board's "not done" count and
+    /// are named, like a pool's "k excluded" (owner report 2026-10-21).
+    static func subtitle(source: BoardSource, supply: WizardSourceSupply, availableCount: Int) -> String {
         if source.kind == .board && supply.noBoardForWindow {
             return BoardSources.noBoardForWindowNote
         }
+        let isDefaultRange = source.min == 0 && source.max == nil
+        let rangeText = rangeText(source: source, availableCount: availableCount)
         switch source.kind {
         case .pool:
             let total = supply.rawSupplyTaskIds.count
@@ -168,24 +185,33 @@ struct RisoSourceRowView: View {
             return parts.joined(separator: " · ")
         case .board:
             if source.filter == .todo {
-                let notDone = BoardSources.availableSupplyIds(
+                let notDoneIds = BoardSources.availableSupplyIds(
                     source: source,
                     supplyTaskIds: supply.rawSupplyTaskIds,
                     doneTaskIds: supply.doneTaskIds
-                ).count
-                var parts = ["\(notDone) not done"]
+                )
+                let excludedCount = Set(source.excludedTaskIds).intersection(notDoneIds).count
+                var parts = ["\(notDoneIds.count - excludedCount) not done"]
+                if excludedCount > 0 { parts.append("\(excludedCount) excluded") }
                 if !isDefaultRange { parts.append(rangeText + " on the board") }
                 return parts.joined(separator: " · ")
             }
             let total = supply.rawSupplyTaskIds.count
             var parts = ["\(total) square\(total == 1 ? "" : "s") · \(supply.doneTaskIds.count) done"]
+            let excludedCount = Set(source.excludedTaskIds)
+                .intersection(supply.rawSupplyTaskIds).count
+            if excludedCount > 0 { parts.append("\(excludedCount) excluded") }
             if !isDefaultRange { parts.append(rangeText + " on the board") }
             return parts.joined(separator: " · ")
         }
     }
 
-    private var rangeText: String {
-        source.min == effectiveMax ? "\(source.min)" : "\(source.min)–\(effectiveMax)"
+    private var rangeText: String { Self.rangeText(source: source, availableCount: availableCount) }
+
+    /// "0–4" / "3" — over the CLAMPED max (web twin: `rangeText`).
+    static func rangeText(source: BoardSource, availableCount: Int) -> String {
+        let max = effectiveMax(source: source, availableCount: availableCount)
+        return source.min == max ? "\(source.min)" : "\(source.min)–\(max)"
     }
 
     // MARK: - Expanded panel

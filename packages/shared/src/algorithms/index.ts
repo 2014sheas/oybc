@@ -444,6 +444,7 @@ export {
   computeSourceCapacity,
   computeAchievablePoolSize,
   buildCounterFamilyMap,
+  restrictToResolvable,
   selectBoardTasks,
   isSourceSupplyTask,
   poolSourceSupplyById,
