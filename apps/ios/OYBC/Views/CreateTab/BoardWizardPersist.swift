@@ -131,6 +131,11 @@ func buildWizardPlacement(
     )
     for payload in controller.pendingTasks.values {
         taskById[payload.task.id] = payload.task
+        // A pending compound's children are placeable too (the Library sheet
+        // offers them as sub-task chips) — without them here a hand-added
+        // child was counted by the gate and dropped at placement (owner
+        // report 2026-10-21), leaving a square empty.
+        for child in payload.childTasks { taskById[child.id] = child }
     }
     // Overlay staged inline edits (Inline Task Editing) so the Step 3 preview
     // grid + summary reflect unsaved renames/goal changes — matching Step 2's
@@ -156,9 +161,17 @@ func buildWizardPlacement(
         let counterFamilies = controller.counterFamilyByTaskId
         let pinnedTaskId: String? =
             isOdd && controller.centerType == .chosen ? controller.centerTaskId : nil
-        let selection = BoardSources.selectBoardTasks(
-            supplies: controller.algorithmSupplies(),
+        // Restricted to what `taskById` can resolve — the SAME restriction
+        // `sourceCapacity` applies, so the gate's dry-run and this deal run
+        // over one universe (`BoardSources.restrictToResolvable`).
+        let inputs = BoardSources.restrictToResolvable(
+            controller.algorithmSupplies(),
             manualTaskIds: Array(controller.manualTaskIds),
+            resolvableTaskIds: Set(taskById.keys)
+        )
+        let selection = BoardSources.selectBoardTasks(
+            supplies: inputs.supplies,
+            manualTaskIds: inputs.manualTaskIds,
             cellCount: tasksNeededForBoard(size: size, centerType: controller.centerType),
             randomize: controller.isRandomized,
             counterFamilyByTaskId: counterFamilies,
@@ -195,7 +208,7 @@ func buildWizardPlacement(
         // center choice — the center is the harder user intent).
         if isOdd, controller.centerType == .chosen, let cid = controller.centerTaskId,
            !selectedIds.contains(cid), taskById[cid] != nil, !selectedIds.isEmpty {
-            let supplies = controller.algorithmSupplies()
+            let supplies = inputs.supplies
             let availSets = supplies.map { Set(BoardSources.resolveSourceAvailable($0)) }
             let targets = supplies.enumerated().map { i, supply in
                 Swift.min(

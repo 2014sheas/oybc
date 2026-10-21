@@ -216,12 +216,40 @@ extension BoardWizardViewModel {
     /// before any preview/deal. Replaces `selectedTaskIds.count`
     /// everywhere the step gates/counts; gate-passed ⇒ the deal fills.
     var sourceCapacity: Int {
-        BoardSources.computeSourceCapacity(
-            algorithmSupplies(),
-            manualTaskIds: Array(manualTaskIds),
+        let inputs = resolvableDealInputs()
+        return BoardSources.computeSourceCapacity(
+            inputs.supplies,
+            manualTaskIds: inputs.manualTaskIds,
             counterFamilyByTaskId: counterFamilyByTaskId,
             pinnedTaskId: centerType == .chosen ? centerTaskId : nil
         ).capacity
+    }
+
+    /// Every id the placement lookup (`buildWizardPlacement`'s `taskById`)
+    /// can resolve: the live library plus this session's pending tasks and
+    /// their children. Empty while the library has not loaded.
+    var resolvableTaskIds: Set<String> {
+        guard !knownLibraryTaskIds.isEmpty else { return [] }
+        var ids = knownLibraryTaskIds
+        for payload in pendingTasks.values {
+            ids.insert(payload.task.id)
+            for child in payload.childTasks { ids.insert(child.id) }
+        }
+        return ids
+    }
+
+    /// The supplies + hand-added layer the gate AND the deal run over —
+    /// `algorithmSupplies()` restricted to ``resolvableTaskIds``
+    /// (`BoardSources.restrictToResolvable`), so a cached supply or a stale
+    /// hand-add naming a task the library no longer holds counts for nothing
+    /// on either side (owner report 2026-10-21). Web twin: the
+    /// `resolvableTaskIds` arg of `sourceCapacity` ↔ `buildWizardPlacement`.
+    func resolvableDealInputs() -> (supplies: [BoardSources.Supply], manualTaskIds: [String]) {
+        BoardSources.restrictToResolvable(
+            algorithmSupplies(),
+            manualTaskIds: Array(manualTaskIds),
+            resolvableTaskIds: resolvableTaskIds
+        )
     }
 
     /// The full task id → shared-counter family map: the container-fed
@@ -230,20 +258,18 @@ extension BoardWizardViewModel {
     var counterFamilyByTaskId: [String: String] {
         var map = libraryCounterFamilies
         for payload in pendingTasks.values {
-            if payload.task.type == .counting {
-                map[payload.task.id] = payload.task.sharedCounterId ?? payload.task.id
-            }
-            for child in payload.childTasks where child.type == .counting {
-                map[child.id] = child.sharedCounterId ?? child.id
-            }
+            var pending = [payload.task]
+            pending.append(contentsOf: payload.childTasks)
+            map.merge(BoardSources.buildCounterFamilyMap(pending)) { _, new in new }
         }
         return map
     }
 
-    /// Container hook: rebuild the library half of the family map after a
-    /// library (re)load.
+    /// Container hook: rebuild the library half of the family map — and the
+    /// known-id set behind ``resolvableTaskIds`` — after a library (re)load.
     func refreshCounterFamilies(libraryTasks: [Task]) {
         libraryCounterFamilies = BoardSources.buildCounterFamilyMap(libraryTasks)
+        knownLibraryTaskIds = Set(libraryTasks.map { $0.id })
     }
 
     // MARK: - Pull / remove
@@ -720,9 +746,14 @@ extension BoardWizardViewModel {
             childrenByCompoundId: childrenByCompoundId,
             tasksById: tasksById
         ).map { $0.asSupply }
+        // A hand-added id the library no longer holds counts for nothing —
+        // the reopened wizard's placement could not resolve it either.
+        let resolvable = BoardSources.restrictToResolvable(
+            supplies, manualTaskIds: mix.manualTaskIds, resolvableTaskIds: Set(tasksById.keys)
+        )
         return BoardSources.computeSourceCapacity(
-            supplies,
-            manualTaskIds: mix.manualTaskIds,
+            resolvable.supplies,
+            manualTaskIds: resolvable.manualTaskIds,
             counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasks),
             pinnedTaskId: board.centerSquareType == .chosen ? board.centerTaskId : nil
         ).capacity

@@ -206,7 +206,12 @@ vector-pinned:
   derived versions (`sharedCounterId`) are distinct tasks that tick
   together — two of them on one board makes no sense, so the fill places
   at most ONE member of a family (`buildCounterFamilyMap`:
-  `sharedCounterId ?? id`, counting tasks only). Collision priority:
+  `sharedCounterId ?? id` for counting tasks; **a unit task — any type
+  carrying `countsTowardCounterId` — keys to that counter's root**, amended
+  2026-10-21 after the owner saw "go to bed by 10:30" (a unit task) and
+  "go to bed before 10:30" (the counter at goal 1) dealt onto one board:
+  completing the unit task credits the counter, so the two squares tick
+  in one tap). Collision priority:
   **pinned CHOSEN center** (its mates are pruned before the draw, so the
   center swap can never collide) > **hand-added** (source-only mates are
   pruned) > **covering an unmet min** (Phase A reaches those first) >
@@ -215,6 +220,27 @@ vector-pinned:
   family once. Enforcement is the SELECTION PATH (wizard create + every
   spawn); Board Edit / add-to-live-board surfaces are a tracked
   follow-up.
+- **The gate counts only what the placement can resolve** (2026-10-21).
+  A pulled board's supply is cached at pull time while the task library
+  keeps reloading, so a task deleted mid-session (a sync pull, a cascade
+  delete on another surface) — or a hand-added id a saved draft still
+  names, or a pending compound's children added from the Library sheet's
+  chips (placeable, but absent from the placement lookup until this fix)
+  — could be counted by the gate and silently dropped by the placement's
+  task lookup: a green gate and an empty square. Both wizards now run the
+  capacity dry-run AND the deal through `restrictToResolvable` (shared TS
+  ↔ Swift twin) over one universe — the live library plus the session's
+  pending tasks and their children (iOS `BoardWizardViewModel.resolvableTaskIds`;
+  web `useWizardDerived`'s `resolvableTaskIds` ↔ `buildWizardPlacement`'s
+  `libraryById`) — and `resolveDraftCapacity` filters a draft's hand-adds
+  by the rows it fetched. An EMPTY resolvable set means "not loaded" and
+  restricts nothing. The Preview's Activate / Create button is disabled
+  while capacity is short (the Squares count already shows it in ink), so
+  no route to Preview can create an under-filled board. Same report, the
+  board row's counts now follow excludes like a pool row's: "3 not done ·
+  2 excluded" / "6 squares · 1 done · 2 excluded", and the range text and
+  slider clamp a stored max to the live available count ("0–3 of 3", not
+  "0–4 of 3" — the fill already honoured `min(max, available)`).
 - **The gate never overpromises.** `computeSourceCapacity().capacity` is
   now a deterministic DRY-RUN of the actual fill (uncapped, unshuffled —
   `computeAchievablePoolSize`), honoring caps, cap overlap, the family

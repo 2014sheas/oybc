@@ -11,6 +11,7 @@
 import {
   applyMemberRules,
   computeSourceCapacity,
+  restrictToResolvable,
   poolSourceSupplyById,
   availableSupplyIds,
   resolveSourceAvailable,
@@ -191,14 +192,26 @@ export function sourceCapacity(
   pinnedTaskId?: string,
   childrenByCompoundId: SupplyChildrenMap = {},
   tasksById: SupplyTasksMap = {},
+  resolvableTaskIds: ReadonlySet<string> = EMPTY_RESOLVABLE,
 ): number {
-  return computeSourceCapacity(
+  // Only ids the placement lookup can resolve count (`restrictToResolvable`):
+  // a cached supply or a stale hand-add naming a task the library no longer
+  // holds must not inflate the gate past what the deal can place.
+  const restricted = restrictToResolvable(
     algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById),
     Array.from(manualTaskIds),
+    resolvableTaskIds,
+  );
+  return computeSourceCapacity(
+    restricted.supplies,
+    restricted.manualTaskIds,
     counterFamilyByTaskId,
     pinnedTaskId ?? undefined,
   ).capacity;
 }
+
+/** "Not loaded" — `restrictToResolvable` restricts nothing for an empty set. */
+const EMPTY_RESOLVABLE: ReadonlySet<string> = new Set<string>();
 
 /**
  * Counter-family collisions visible in the wizard pool: family key →

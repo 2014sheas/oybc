@@ -359,16 +359,51 @@ enum BoardSources {
     }
 
     /// Task id → counter-family key: counting tasks map to
-    /// `sharedCounterId ?? id`; other types get no entry. TS twin:
-    /// `buildCounterFamilyMap`.
+    /// `sharedCounterId ?? id`, and a UNIT task — any type carrying
+    /// `countsTowardCounterId` (docs/SHARED_COUNTER_SETTINGS.md §3) — maps
+    /// to that counter's root, so it is exclusive with the counter's own
+    /// squares: completing it credits the counter, and a counter square at
+    /// goal 1 would tick in the same tap (owner report 2026-10-21). Other
+    /// tasks get no entry. TS twin: `buildCounterFamilyMap`.
     static func buildCounterFamilyMap<S: Sequence>(
         _ tasks: S
     ) -> [String: String] where S.Element == Task {
         var map: [String: String] = [:]
-        for task in tasks where task.type == .counting {
-            map[task.id] = task.sharedCounterId ?? task.id
+        for task in tasks {
+            if let counterId = task.countsTowardCounterId {
+                map[task.id] = counterId
+            } else if task.type == .counting {
+                map[task.id] = task.sharedCounterId ?? task.id
+            }
         }
         return map
+    }
+
+    /// The deal's inputs restricted to ids the placement can resolve — the
+    /// wizard's live library plus its pending tasks and their children. A
+    /// pulled board's supply is cached at pull time while the library keeps
+    /// reloading, so a task deleted mid-session could otherwise be counted
+    /// by the gate and dropped by the placement lookup, leaving a square
+    /// empty behind a green gate (owner report 2026-10-21). Filtering BOTH
+    /// the capacity dry-run and the deal through this keeps "gate passed ⇒
+    /// the board fills" true by construction.
+    ///
+    /// An EMPTY `resolvableTaskIds` means "not loaded yet" and restricts
+    /// nothing. TS twin: `restrictToResolvable`.
+    static func restrictToResolvable(
+        _ supplies: [Supply],
+        manualTaskIds: [String],
+        resolvableTaskIds: Set<String>
+    ) -> (supplies: [Supply], manualTaskIds: [String]) {
+        guard !resolvableTaskIds.isEmpty else { return (supplies, manualTaskIds) }
+        let restricted = supplies.map { supply in
+            Supply(
+                source: supply.source,
+                supplyTaskIds: supply.supplyTaskIds.filter { resolvableTaskIds.contains($0) },
+                goalByTaskId: supply.goalByTaskId
+            )
+        }
+        return (restricted, manualTaskIds.filter { resolvableTaskIds.contains($0) })
     }
 
     /// True when a task type may enter source supply (pools and pulled

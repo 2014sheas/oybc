@@ -83,6 +83,45 @@ function render(
   );
 }
 
+function renderWithAvailable(
+  source: BoardSource,
+  tasks: Task[],
+  availableCount: number,
+  supplyOver: Partial<WizardSourceSupply> = {},
+): string {
+  const taskById: Record<string, Task> = {};
+  for (const t of tasks) taskById[t.id] = t;
+  const supply: WizardSourceSupply = {
+    displayName: 'Daily',
+    rawSupplyTaskIds: tasks.map((t) => t.id),
+    doneTaskIds: new Set<string>(),
+    ...supplyOver,
+  };
+  return renderToStaticMarkup(
+    React.createElement(SourceRow, {
+      source,
+      supply,
+      availableCount,
+      isExpanded: true,
+      taskById,
+      onToggleExpanded: () => {},
+      onRemove: () => {},
+      onSetFilter: () => {},
+      onSetRange: () => {},
+      onToggleExclude: () => {},
+      compoundChildrenByCompound: {},
+      mode: 'oneOff',
+      wizardWindow: WIZARD_WINDOW,
+      onSetMemberTarget: () => {},
+      onSetMemberVary: () => {},
+      onSetMemberSplit: () => {},
+      onSetPartExcluded: () => {},
+      onSetPartTarget: () => {},
+      onSetPartVary: () => {},
+    }),
+  );
+}
+
 const POOL_SOURCE: BoardSource = {
   sourceId: 'pool-1',
   kind: 'pool',
@@ -93,6 +132,36 @@ const POOL_SOURCE: BoardSource = {
 };
 
 describe('SourceRow', () => {
+  describe('counts after excludes (owner report 2026-10-21)', () => {
+    const BOARD_TODO: BoardSource = {
+      sourceId: 'board-1',
+      kind: 'board',
+      min: 0,
+      max: 4,
+      excludedTaskIds: ['t-2', 't-3'],
+      filter: 'todo',
+    };
+    const squares = ['t-1', 't-2', 't-3', 't-4', 't-5', 't-6'].map((id) => makeTask(id, id));
+
+    it('"not done" leaves out excluded squares and names them; the range clamps to what is left', () => {
+      const html = renderWithAvailable(BOARD_TODO, squares, 3, { doneTaskIds: new Set(['t-6']) });
+      expect(html).toContain('3 not done · 2 excluded · 0–3 on the board');
+      expect(html).not.toContain('0–4');
+    });
+
+    it('"All squares" names excluded squares too', () => {
+      const html = renderWithAvailable({ ...BOARD_TODO, filter: 'all', max: null }, squares, 4, {
+        doneTaskIds: new Set(['t-6']),
+      });
+      expect(html).toContain('6 squares · 1 done · 2 excluded');
+    });
+
+    it('a stored max within the available count still reads as stored', () => {
+      const html = renderWithAvailable({ ...BOARD_TODO, excludedTaskIds: [] }, squares, 6);
+      expect(html).toContain('6 not done · 0–4 on the board');
+    });
+  });
+
   it('offers no per-member ⋯ menu (#471 removed)', () => {
     const counting = makeTask('t-read', 'Read', {
       type: TaskType.COUNTING,

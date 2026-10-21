@@ -124,6 +124,20 @@ export function useWizardDerived({
   // deterministic dry-run of the actual fill (family rule + cap overlap
   // included, the CHOSEN center pinned), so gate-passed ⇒ the deal fills.
   // §Member rules (B3, RC7) — a Split-up member counts as its parts.
+  // Every id the placement lookup (`buildWizardPlacement`'s `libraryById`)
+  // can resolve: the live library plus this session's pending tasks and
+  // their children. The gate counts nothing outside it (owner report
+  // 2026-10-21: a square dealt from a cached supply but gone from the
+  // library previewed empty behind a green gate).
+  const resolvableTaskIds = useMemo<ReadonlySet<string>>(() => {
+    const ids = new Set<string>(Object.keys(tasksById));
+    for (const payload of pendingTasks.values()) {
+      ids.add(payload.task.id);
+      for (const child of payload.childTasks) ids.add(child.id);
+    }
+    return ids;
+  }, [tasksById, pendingTasks]);
+
   const capacity = useMemo(
     () =>
       sourceCapacity(
@@ -134,10 +148,11 @@ export function useWizardDerived({
         centerMode ? (centerTaskId ?? undefined) : undefined,
         childrenByCompoundId,
         tasksById,
+        resolvableTaskIds,
       ),
     [
       sources, supplyInfoBySourceId, manualTaskIds, counterFamilyByTaskId,
-      centerMode, centerTaskId, childrenByCompoundId, tasksById,
+      centerMode, centerTaskId, childrenByCompoundId, tasksById, resolvableTaskIds,
     ],
   );
 

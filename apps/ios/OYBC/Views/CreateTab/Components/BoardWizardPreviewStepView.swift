@@ -469,6 +469,11 @@ struct BoardWizardPreviewStepView: View {
         controller.isCore && controller.selectedTaskIds.count < controller.tasksRequired
     }
 
+    /// Boards are always exactly filled: a Preview reached short (the
+    /// Squares count already shows it in ink) never creates — the Tasks
+    /// step's gate is the same comparison (owner report 2026-10-21).
+    private var isShort: Bool { controller.sourceCapacity < controller.tasksRequired }
+
     /// Board Creation Split (iOS PR A) — "Create Board" replaces the
     /// former "Create template & spawn" (banned mechanics words: no
     /// "template", no "spawn" anywhere in UI copy).
@@ -790,7 +795,7 @@ private extension BoardWizardPreviewStepView {
                 ) {
                     performCreation()
                 }
-                .disabled(isCreating || isBelowCoreFloor)
+                .disabled(isCreating || isBelowCoreFloor || isShort)
                 .tutorialAnchor(.activateBoard)
             }
         }
@@ -814,7 +819,7 @@ private extension BoardWizardPreviewStepView {
             RisoButton(title: recurringPrimaryLabel, kind: .blue, fullWidth: true) {
                 performCreation()
             }
-            .disabled(isCreating)
+            .disabled(isCreating || isShort)
         }
         .padding(.horizontal, Riso.gutter)
         .padding(.top, 16)

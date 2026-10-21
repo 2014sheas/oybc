@@ -375,6 +375,10 @@ export function BoardWizardPreviewStep({
   );
   const isCoreFloorBlocked =
     controller.isCore && !controller.isRecurring && !coreFloorGate.isSatisfied;
+  // Boards are always exactly filled: a Preview reached short (the Squares
+  // count already shows it in ink) never creates — the Tasks step's gate is
+  // the same comparison (owner report 2026-10-21).
+  const isShort = controller.capacity < controller.tasksRequired;
   // Per-id task lookup including this-session pending (not-yet-persisted)
   // tasks — mirrors the Tasks step's `effectiveTaskMap` merge so a
   // just-created hand-added task still resolves in the 5b summary card.
@@ -651,7 +655,7 @@ export function BoardWizardPreviewStep({
             type="button"
             className={styles.createBoardButton}
             onClick={() => void performCreation()}
-            disabled={isCreating}
+            disabled={isCreating || isShort}
           >
             {isCreating
               ? 'Saving…'
@@ -664,7 +668,7 @@ export function BoardWizardPreviewStep({
             type="button"
             className={styles.activateButton}
             onClick={() => void performCreation()}
-            disabled={isCreating || isCoreFloorBlocked}
+            disabled={isCreating || isCoreFloorBlocked || isShort}
           >
             {isCreating ? 'Activating…' : 'Activate Board'}
           </button>

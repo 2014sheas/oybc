@@ -24,6 +24,7 @@ import {
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
+import { sourceCapacity } from '../../../pages/createHub/wizardSources';
 
 
 /**
@@ -1339,5 +1340,78 @@ describe('deleteEditedRecurringTemplate — Profile reorg PR3 (Delete lives in t
     const stored = await db.recurringBoardTemplates.get('tmpl-1');
     expect(stored?.isDeleted).toBe(false);
     expect(await db.syncQueue.count()).toBe(0);
+  });
+});
+
+describe('buildWizardPlacement — the gate and the deal share one resolvable universe (2026-10-21)', () => {
+  it('places sub-tasks of a PENDING compound that were hand-added from the Library sheet', () => {
+    const sourceIds = ['s-0', 's-1', 's-2', 's-3', 's-4', 's-5'];
+    const tasks = sourceIds.map((id) => makeTask(id));
+    const parent = makeTask('P', { type: TaskType.COMPOUND, createdInWizard: true });
+    const kids = [makeTask('p1', { createdInWizard: true }), makeTask('p2', { createdInWizard: true })];
+    const payload: PendingTaskPayload = {
+      task: parent,
+      childTasks: kids,
+      childLinks: kids.map((child, index) => ({
+        id: `link-${child.id}`, compoundTaskId: 'P', childTaskId: child.id, childIndex: index,
+        createdAt: NOW, updatedAt: NOW, version: 1, isDeleted: false,
+      })),
+    };
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.NONE,
+      selectedTaskIds: new Set([...sourceIds, 'P', 'p1', 'p2']),
+      sources: [
+        { sourceId: 'b1', kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'todo' },
+      ],
+      supplyInfoBySourceId: { b1: supplyEntry('Daily', sourceIds) },
+      manualTaskIds: new Set(['P', 'p1', 'p2']),
+      pendingTasks: new Map([['P', payload]]),
+      tasksRequired: 9,
+    });
+
+    const placement = buildWizardPlacement(controller, emptyTaskLibrary(tasks));
+    expect(placement.filter((t) => t === null)).toHaveLength(0);
+    const placed = placedIds(placement);
+    expect(placed).toContain('p1');
+    expect(placed).toContain('p2');
+  });
+
+  it('a task the library no longer holds is dropped from the deal AND from the gate alike', () => {
+    const sourceIds = ['s-0', 's-1', 's-2', 's-3', 's-4', 's-5', 'gone-source'];
+    const manualIds = ['m-0', 'm-1', 'm-2', 'm-3', 'gone-manual'];
+    const tasks = [...sourceIds, ...manualIds]
+      .filter((id) => !id.startsWith('gone'))
+      .map((id) => makeTask(id));
+    const sources = [
+      { sourceId: 'b1', kind: 'board' as const, min: 0, max: null, excludedTaskIds: [], filter: 'todo' as const },
+    ];
+    const supplyInfoBySourceId = { b1: supplyEntry('Daily', sourceIds) };
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.NONE,
+      selectedTaskIds: new Set([...sourceIds, ...manualIds]),
+      sources,
+      supplyInfoBySourceId,
+      manualTaskIds: new Set(manualIds),
+      tasksRequired: 9,
+    });
+    const library = emptyTaskLibrary(tasks);
+
+    // The gate over the resolvable universe says 10 (6 source + 4 manual).
+    const resolvable = new Set(Object.keys(library.taskMap));
+    expect(
+      sourceCapacity(sources, supplyInfoBySourceId, new Set(manualIds), undefined, undefined, {}, library.taskMap, resolvable),
+    ).toBe(10);
+    // Without the restriction the gate would promise 12 and the deal could
+    // not keep it — the exact empty-square shape the owner reported.
+    expect(sourceCapacity(sources, supplyInfoBySourceId, new Set(manualIds))).toBe(12);
+
+    for (let i = 0; i < 20; i += 1) {
+      const placement = buildWizardPlacement(controller, library);
+      expect(placement.filter((t) => t === null)).toHaveLength(0);
+      expect(placedIds(placement)).not.toContain('gone-source');
+      expect(placedIds(placement)).not.toContain('gone-manual');
+    }
   });
 });

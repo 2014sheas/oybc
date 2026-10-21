@@ -124,8 +124,10 @@ struct BoardWizardView: View {
     /// library's counting tasks, for the `.onChange` that refreshes the
     /// wizard VM's family map.
     private var counterFamilySignature: [String] {
-        library.libraryTasks.compactMap { task in
-            task.type == .counting ? "\(task.id)|\(task.sharedCounterId ?? "")" : nil
+        // Every id (the VM's resolvable set follows the library) plus the
+        // two links the family map reads.
+        library.libraryTasks.map { task in
+            "\(task.id)|\(task.type == .counting ? (task.sharedCounterId ?? "") : "-")|\(task.countsTowardCounterId ?? "")"
         }
     }
 

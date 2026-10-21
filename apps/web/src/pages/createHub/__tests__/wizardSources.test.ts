@@ -94,6 +94,16 @@ describe('selectionUnion + sourceCapacity', () => {
     expect([...selectionUnion(sources, info, new Set())].sort()).toEqual(['a', 'c']);
     expect(sourceCapacity(sources, info, new Set())).toBe(2);
   });
+
+  it('counts only ids the placement can resolve; an empty resolvable set means "not loaded"', () => {
+    const sources = [makeSource({ sourceId: 'b1', kind: 'board', filter: 'todo', max: 4 })];
+    const info: SupplyInfoMap = { b1: supplyEntry('Daily', ['a', 'b', 'c', 'd', 'gone']) };
+    const manual = new Set(['m', 'gone-m']);
+    const resolvable = new Set(['a', 'b', 'c', 'd', 'm']);
+    expect(sourceCapacity(sources, info, manual, undefined, undefined, {}, {}, resolvable)).toBe(5);
+    expect(sourceCapacity(sources, info, manual, undefined, undefined, {}, {}, new Set())).toBe(6);
+    expect(sourceCapacity(sources, info, manual)).toBe(6);
+  });
 });
 
 describe('excludeFromEverySupplier (library-sheet deselect)', () => {

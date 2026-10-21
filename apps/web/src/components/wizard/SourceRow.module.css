@@ -86,9 +86,12 @@
   font-size: 10.5px;
   font-weight: 600;
   color: var(--riso-muted);
-  white-space: nowrap;
+  /* The counts wrap to a second line rather than truncate
+     ("… · 1 excluded · 1–2 on the board"); mirrors iOS `lineLimit(2)`. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .chevron {

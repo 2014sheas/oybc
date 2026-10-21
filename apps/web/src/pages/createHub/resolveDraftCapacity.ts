@@ -109,5 +109,8 @@ export async function resolveDraftCapacity(
     pinnedTaskId,
     childrenByCompoundId,
     tasksById,
+    // A hand-added id the library no longer holds counts for nothing — the
+    // reopened wizard's placement could not resolve it either.
+    new Set(Object.keys(tasksById)),
   );
 }

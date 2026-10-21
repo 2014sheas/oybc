@@ -98,6 +98,10 @@ final class BoardWizardViewModel {
     /// (+Sources.swift). Feeds the capacity dry-run + the placement pick
     /// so two goals on one counter never share a board.
     var libraryCounterFamilies: [String: String] = [:]
+    /// Every live library task id, refreshed alongside the family map —
+    /// the library half of ``resolvableTaskIds`` (+Sources.swift). Empty
+    /// until the first loaded library arrives ("not loaded" restricts nothing).
+    var knownLibraryTaskIds: Set<String> = []
 
     // MARK: - Sources (Board Sources rework P2, docs/BOARD_SOURCES.md)
     //
