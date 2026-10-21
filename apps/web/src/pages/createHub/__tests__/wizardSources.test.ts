@@ -11,6 +11,7 @@ import {
   excludeFromEverySupplier,
   isDefaultRange,
   poolSupplyEntry,
+  resolvableUniverse,
   selectionUnion,
   sourceCapacity,
   sourceRangeLine,
@@ -93,6 +94,18 @@ describe('selectionUnion + sourceCapacity', () => {
     const info: SupplyInfoMap = { p1: supplyEntry('One', ['a', 'b', 'c']) };
     expect([...selectionUnion(sources, info, new Set())].sort()).toEqual(['a', 'c']);
     expect(sourceCapacity(sources, info, new Set())).toBe(2);
+  });
+
+  it('resolvableUniverse is library ∪ pending ∪ pending children, and empty ("not loaded") while the library is', () => {
+    const task = (id: string): Task =>
+      ({ id, userId: 'u', title: id, type: TaskType.NORMAL, isCompleted: false, totalCompletions: 0,
+        totalInstances: 0, createdAt: 'now', updatedAt: 'now', version: 1, isDeleted: false }) as Task;
+    const pending = new Map([
+      ['P', { task: task('P'), childTasks: [task('p1'), task('p2')], childLinks: [] }],
+    ]);
+    expect([...resolvableUniverse({ a: task('a'), b: task('b') }, pending)].sort()).toEqual(['P', 'a', 'b', 'p1', 'p2']);
+    // A pending task alone must not read as "only the pending task resolves".
+    expect(resolvableUniverse({}, pending).size).toBe(0);
   });
 
   it('counts only ids the placement can resolve; an empty resolvable set means "not loaded"', () => {

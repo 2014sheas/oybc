@@ -230,6 +230,8 @@ extension BoardWizardViewModel {
     /// their children. Empty while the library has not loaded.
     var resolvableTaskIds: Set<String> {
         guard !knownLibraryTaskIds.isEmpty else { return [] }
+        // Copy-on-write: with nothing pending this is the stored set itself.
+        guard !pendingTasks.isEmpty else { return knownLibraryTaskIds }
         var ids = knownLibraryTaskIds
         for payload in pendingTasks.values {
             ids.insert(payload.task.id)
@@ -738,7 +740,11 @@ extension BoardWizardViewModel {
         for links in childrenByCompoundId.values {
             for link in links { referenced.insert(link.childTaskId) }
         }
-        let tasks = (try? database.fetchTasks(ids: Array(referenced))) ?? []
+        // Live rows only (`fetchTasks(ids:)` returns tombstones too) — a
+        // deleted hand-add must count for nothing here, as it does once the
+        // wizard reopens over its `isDeleted == false` library (web
+        // `fetchTasksByIds` filters the same way).
+        let tasks = ((try? database.fetchTasks(ids: Array(referenced))) ?? []).filter { !$0.isDeleted }
         let tasksById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let supplies = expandedSupplies(
             sources: hydrated.sources,

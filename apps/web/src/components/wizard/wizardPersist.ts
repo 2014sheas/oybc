@@ -11,7 +11,7 @@ import {
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
-import { algorithmSupplies } from '../../pages/createHub/wizardSources';
+import { algorithmSupplies, resolvableUniverse } from '../../pages/createHub/wizardSources';
 import { freezeTypedManualTargets } from '../../pages/createHub/wizardPlacementParamsLogic';
 import {
   createRecurringBoardTemplate,
@@ -108,9 +108,9 @@ export function buildWizardPlacement(
     // supplies, so a split compound offers its parts as separate squares.
     // `libraryById` already merges the live library with this session's
     // pending tasks, which is exactly the universe the expansion reads.
-    // Restricted to what `libraryById` can resolve — the SAME restriction
-    // `useWizardDerived.capacity` applies, so the gate's dry-run and this
-    // deal run over one universe (`restrictToResolvable`).
+    // Restricted to the ONE resolvable universe `useWizardDerived.capacity`
+    // gates on (`resolvableUniverse`), so the gate's dry-run and this deal
+    // run over identical inputs (`restrictToResolvable`).
     const { supplies, manualTaskIds } = restrictToResolvable(
       algorithmSupplies(
         sources,
@@ -119,7 +119,7 @@ export function buildWizardPlacement(
         Object.fromEntries(libraryById),
       ),
       Array.from(controller.manualTaskIds),
-      new Set(libraryById.keys()),
+      resolvableUniverse(library.taskMap, pendingMap),
     );
     // Counter-family exclusivity (2026-09-08): the pick never places two
     // members of one shared-counter family, and a CHOSEN center is pinned

@@ -26,7 +26,7 @@ import {
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { BoardWizardDerived, WizardStep } from './boardWizardTypes';
-import { sourceCapacity, type SupplyInfoMap } from './wizardSources';
+import { resolvableUniverse, sourceCapacity, type SupplyInfoMap } from './wizardSources';
 
 export interface UseWizardDerivedArgs {
   /** The raw (untrimmed) board name. */
@@ -129,14 +129,10 @@ export function useWizardDerived({
   // their children. The gate counts nothing outside it (owner report
   // 2026-10-21: a square dealt from a cached supply but gone from the
   // library previewed empty behind a green gate).
-  const resolvableTaskIds = useMemo<ReadonlySet<string>>(() => {
-    const ids = new Set<string>(Object.keys(tasksById));
-    for (const payload of pendingTasks.values()) {
-      ids.add(payload.task.id);
-      for (const child of payload.childTasks) ids.add(child.id);
-    }
-    return ids;
-  }, [tasksById, pendingTasks]);
+  const resolvableTaskIds = useMemo<ReadonlySet<string>>(
+    () => resolvableUniverse(tasksById, pendingTasks),
+    [tasksById, pendingTasks],
+  );
 
   const capacity = useMemo(
     () =>
@@ -161,9 +157,12 @@ export function useWizardDerived({
     if (centerMode) {
       if (centerTaskId === null) return false;
       if (!selectedTaskIds.has(centerTaskId)) return false;
+      // A CHOSEN centre the placement cannot resolve (deleted mid-session)
+      // would be silently replaced by the deal — not a valid centre.
+      if (resolvableTaskIds.size > 0 && !resolvableTaskIds.has(centerTaskId)) return false;
     }
     return true;
-  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
+  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId, resolvableTaskIds]);
 
   const step2ValidationMessage = useMemo<string | null>(() => {
     // Don't accuse the user of a shortfall we can't actually measure yet

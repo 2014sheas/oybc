@@ -282,6 +282,63 @@ final class WizardSourceFillTests: XCTestCase {
         XCTAssertEqual(vm.sourceCapacity, 12)
     }
 
+    /// A CHOSEN centre the placement cannot resolve (deleted mid-session) is
+    /// not a valid Step-2 state — the deal would silently seat another task.
+    func test_aDeletedChosenCenterInvalidatesStepTwo() throws {
+        let database = try seed()
+        let library = try makeLibrary(database)
+        let vm = pulledVM(database, library, max: nil)
+        vm.centerType = .chosen
+        for id in ["n1", "n2", "n3", "n4"] { vm.toggleTaskSelection(id) }
+        vm.setCenterTaskId("n1")
+        XCTAssertTrue(vm.isStep2Valid)
+
+        try database.write { db in
+            var gone = try XCTUnwrap(OYBC.Task.fetchOne(db, key: "n1"))
+            gone.isDeleted = true
+            gone.deletedAt = self.now
+            try gone.save(db)
+        }
+        library.libraryTasks = try database.read { db in
+            try OYBC.Task.filter(Column("isDeleted") == false).fetchAll(db)
+        }
+        vm.refreshCounterFamilies(libraryTasks: library.libraryTasks)
+        XCTAssertTrue(vm.selectedTaskIds.contains("n1"), "the hand-added layer still names it")
+        XCTAssertFalse(vm.isStep2Valid)
+        XCTAssertEqual(vm.step2ValidationMessage, "Mark one selected task as the center.")
+    }
+
+    /// A saved draft's pool size (drafts list / resume step) ignores a
+    /// hand-added id whose task has since been tombstoned — the reopened
+    /// wizard will not count it either.
+    func test_draftCapacityIgnoresATombstonedHandAdd() throws {
+        let database = try seed()
+        var dict: [String: Any] = [
+            "id": "draft", "userId": userId, "name": "Draft", "status": BoardStatus.draft.rawValue,
+            "boardSize": 3, "timeframe": Timeframe.daily.rawValue,
+            "startDate": windowStart, "endDate": windowEnd,
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": true,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false,
+        ]
+        let mix = RecurringDraftMixPayload(
+            poolIds: [], manualTaskIds: ["n1", "n2", "n3", "n4", "U"], removedTaskIds: [],
+            sources: [BoardSource(sourceId: sourceBoardId, kind: .board, filter: .todo)]
+        )
+        dict["recurringDraftMix"] = try XCTUnwrap(mix.encoded())
+        let board = try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: dict))
+        // 8 not done − C2 (pruned by the unit task) + 5 hand-added.
+        XCTAssertEqual(BoardWizardViewModel.resolveDraftCapacity(board: board, database: database), 12)
+
+        try database.write { db in
+            var gone = try XCTUnwrap(OYBC.Task.fetchOne(db, key: "n4"))
+            gone.isDeleted = true
+            gone.deletedAt = self.now
+            try gone.save(db)
+        }
+        XCTAssertEqual(BoardWizardViewModel.resolveDraftCapacity(board: board, database: database), 11)
+    }
+
     // MARK: - Row counts after excludes
 
     func test_boardRowCountsFollowExcludes() {

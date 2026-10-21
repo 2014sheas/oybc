@@ -929,9 +929,17 @@ final class BoardWizardViewModel {
     var isStep2Valid: Bool {
         guard sourceCapacity >= tasksRequired else { return false }
         if centerMode {
-            guard let id = centerTaskId, selectedTaskIds.contains(id) else { return false }
+            guard let id = centerTaskId, selectedTaskIds.contains(id), isCenterResolvable(id) else { return false }
         }
         return true
+    }
+
+    /// A CHOSEN centre the placement cannot resolve (deleted mid-session)
+    /// would be silently replaced by the deal — not a valid centre. An
+    /// unloaded library (empty set) resolves everything.
+    func isCenterResolvable(_ id: String) -> Bool {
+        let resolvable = resolvableTaskIds
+        return resolvable.isEmpty || resolvable.contains(id)
     }
 
     var step2ValidationMessage: String? {
@@ -941,7 +949,7 @@ final class BoardWizardViewModel {
             return "\(short) more to fill the board."
         }
         if centerMode {
-            if centerTaskId == nil || !selectedTaskIds.contains(centerTaskId!) {
+            if centerTaskId == nil || !selectedTaskIds.contains(centerTaskId!) || !isCenterResolvable(centerTaskId!) {
                 return "Mark one selected task as the center."
             }
         }

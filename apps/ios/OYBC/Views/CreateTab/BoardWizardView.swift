@@ -377,10 +377,12 @@ struct BoardWizardView: View {
         }
         // Structured, so disappearing cancels the load (see `loadSources`).
         .task { await loadSources() }
-        // Counter-family exclusivity (2026-09-08) — keep the wizard VM's
-        // library-half family map in lockstep with the live library. The
-        // signature is only the counting tasks' id|sharedCounterId pairs,
-        // so unrelated library churn doesn't re-derive anything.
+        // Keep the wizard VM's library half — the counter-family map AND
+        // the known-id set behind `resolvableTaskIds` — in lockstep with the
+        // live library. The signature covers EVERY task id plus the two
+        // counter links, on purpose: an add or delete of any type must reach
+        // the VM, or a task deleted mid-session is counted by the gate and
+        // dropped by the placement (owner report 2026-10-21).
         .onChange(of: counterFamilySignature) { _, _ in
             wizard.refreshCounterFamilies(libraryTasks: library.libraryTasks)
         }

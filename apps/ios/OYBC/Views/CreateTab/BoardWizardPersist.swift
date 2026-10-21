@@ -161,14 +161,11 @@ func buildWizardPlacement(
         let counterFamilies = controller.counterFamilyByTaskId
         let pinnedTaskId: String? =
             isOdd && controller.centerType == .chosen ? controller.centerTaskId : nil
-        // Restricted to what `taskById` can resolve — the SAME restriction
-        // `sourceCapacity` applies, so the gate's dry-run and this deal run
-        // over one universe (`BoardSources.restrictToResolvable`).
-        let inputs = BoardSources.restrictToResolvable(
-            controller.algorithmSupplies(),
-            manualTaskIds: Array(controller.manualTaskIds),
-            resolvableTaskIds: Set(taskById.keys)
-        )
+        // Restricted to the ONE universe `sourceCapacity` gates on
+        // (`controller.resolvableDealInputs()`), so the gate's dry-run and
+        // this deal run over identical inputs. `taskById` above is that same
+        // universe seen through the view's library instance.
+        let inputs = controller.resolvableDealInputs()
         let selection = BoardSources.selectBoardTasks(
             supplies: inputs.supplies,
             manualTaskIds: inputs.manualTaskIds,
