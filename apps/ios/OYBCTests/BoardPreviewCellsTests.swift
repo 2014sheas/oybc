@@ -246,6 +246,52 @@ final class BoardPreviewCellsTests: XCTestCase {
         XCTAssertEqual(done.cells[4], .task(completed: true))
     }
 
+    /// TASK_WINDOW_REWORK slice 2a: a counting square is scored against the
+    /// PLACEMENT's goal (`targetOverride`), never the library row's. Owner
+    /// report 2026-10-23: "Run 1.4 miles" (library goal larger, placed at 1.4,
+    /// 2.3 logged) was done on the play grid but blank on the Boards-list
+    /// thumbnail.
+    func testCountingSquareScoresAgainstThePlacementGoalNotTheTaskGoal() {
+        let board = makeBoard(boardSize: 3, startDate: "2026-07-05T00:00:00.000Z")
+        let task = makeCountingTask("t-run") // library goal 10
+        var bt = makeBoardTask(boardId: board.id, taskId: task.id, row: 0, col: 2)
+        bt.targetOverride = 2
+        bt.targetKind = .discrete
+        let inWindow = TaskEvent(
+            id: "e", userId: userId, taskId: task.id, kind: .increment, delta: 3,
+            occurredAt: "2026-07-06T00:00:00.000Z", boardId: nil, createdAt: "2026-07-06T00:00:00.000Z",
+            updatedAt: "2026-07-06T00:00:00.000Z", lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+
+        let result = BoardPreviewCells.build(
+            board: board, boardTasks: [bt], taskMap: [task.id: task],
+            childrenByCompound: [:], eventsByTaskId: [task.id: [inWindow]]
+        )
+        XCTAssertEqual(result.cells[2], .task(completed: true), "3 logged against a placement goal of 2 is done")
+    }
+
+    /// A compound square's counting child is scored against the placement's
+    /// `childTargets` entry, never the child's library goal.
+    func testCompoundSquareScoresChildrenAgainstThePlacementChildTargets() {
+        let board = makeBoard(boardSize: 3, startDate: "2026-07-05T00:00:00.000Z")
+        let child = makeCountingTask("child-run") // library goal 10
+        let compound = makeCompoundTask("compound-1", operatorType: .and)
+        var bt = makeBoardTask(boardId: board.id, taskId: compound.id, row: 1, col: 1)
+        bt.childTargets = [PlacementChildTarget(childId: child.id, target: 2)]
+        let childrenByCompound = [compound.id: [makeCompoundChild(compound.id, child.id, 0)]]
+        let inWindow = TaskEvent(
+            id: "e", userId: userId, taskId: child.id, kind: .increment, delta: 3,
+            occurredAt: "2026-07-06T00:00:00.000Z", boardId: nil, createdAt: "2026-07-06T00:00:00.000Z",
+            updatedAt: "2026-07-06T00:00:00.000Z", lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+
+        let result = BoardPreviewCells.build(
+            board: board, boardTasks: [bt], taskMap: [compound.id: compound, child.id: child],
+            childrenByCompound: childrenByCompound, eventsByTaskId: [child.id: [inWindow]]
+        )
+        XCTAssertEqual(result.cells[4], .task(completed: true), "the child met its placement goal, so the compound is done")
+    }
+
     func testSealedBoardShortCircuitsToSealedCompletedCellsIgnoringLiveEvents() {
         let board = makeBoard(
             boardSize: 3, startDate: "2026-07-01T00:00:00.000Z",

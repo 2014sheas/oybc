@@ -34,14 +34,11 @@ struct BoardPreviewCellsResult: Equatable {
 /// Builds the TRUE mini-preview grid for a board. Mirrors
 /// `apps/web/src/components/home/boardPreviewCells.ts`'s `buildBoardPreviewCells`
 /// — see that file's doc comment for the rule list (sealed short-circuit,
-/// windowed live evaluation, FREE center, empty cells). The one
-/// platform-specific addition is the ACHIEVEMENT branch: iOS's play grid
-/// live-derives achievement completion from cross-board references rather
-/// than trusting the lifetime `Task.isCompleted` cache the way web's
-/// `taskToSquareState` does. Board-integrity PR-3 — this now calls straight
-/// into `DerivationPass.computeBoardGrid`'s per-cell ACHIEVEMENT resolution
-/// (the ONE implementation of that branch on iOS) rather than hand-copying
-/// the trigger/reference logic a third time.
+/// windowed live evaluation, FREE center, empty cells). Every live cell is
+/// `DerivationPass.computeBoardGrid`'s cell for that placement — the one
+/// resolver the derivation, the play grid and the moment replay share — so
+/// placement parameters (`targetOverride`, `childTargets`), linked counters
+/// and achievement squares all resolve the way the board does.
 enum BoardPreviewCells {
 
     /// - Parameters:
@@ -63,11 +60,6 @@ enum BoardPreviewCells {
         let size = board.boardSize
         let isSealed = board.sealedAt != nil
         let sealedCellSet = Set(isSealed ? (board.sealedCompletedCells ?? []) : [])
-        let windowContext = CompoundWindowContext(
-            windowStart: board.startDate,
-            windowEnd: boardWindowEnd(board),
-            eventsByTaskId: eventsByTaskId
-        )
 
         // Board-integrity PR-2 (Part 2): resolve through
         // `PlacementIntegrity.resolvePlacements` first — a raw duplicate
@@ -85,13 +77,16 @@ enum BoardPreviewCells {
             btByPosition["\(bt.row)-\(bt.col)"] = bt
         }
 
-        // Board-integrity PR-3 — kernel per-cell state, keyed by
-        // boardTaskId, consulted ONLY for the ACHIEVEMENT branch below.
-        // Compound/primitive/sealed resolution stays inline (same judgment
-        // rule `BoardPlayView.kernelCellStates` follows) — this removes the
-        // "mirror-of-mirror" (this file used to hand-copy
-        // `BoardPlayView.achievementCellIsCompleted`, itself a hand-copy of
-        // `DerivationPass`'s ACHIEVEMENT branch).
+        // Kernel per-cell state, keyed by boardTaskId — the ONE live resolver
+        // (Board-integrity PR-3 for the ACHIEVEMENT branch; TASK_WINDOW_REWORK
+        // slice 2a for everything else). `computeBoardGrid` scores each square
+        // against its PLACEMENT — `targetOverride` for a counting square, the
+        // compound's `childTargets`, a linked row's root events in this window
+        // — exactly as the derivation that writes `board.completedTasks` does,
+        // so the thumbnail can never disagree with the card's "n/m squares".
+        // The inline primitive / compound branches this used to carry read the
+        // library row's goal (owner report 2026-10-23: a square placed at 1.4
+        // with 2.3 logged previewed blank). Twin of web `boardPreviewCells.ts`.
         let kernelCells: [String: DerivationPass.CellState] = {
             let built = DerivationPass.computeBoardGrid(
                 board: board,
@@ -125,41 +120,16 @@ enum BoardPreviewCells {
                     continue
                 }
 
-                guard let task = taskMap[bt.taskId] else {
+                guard taskMap[bt.taskId] != nil else {
                     cells.append(.empty)
                     continue
                 }
 
+                // A sealed board shows its frozen snapshot; a live one the kernel's cell.
                 let cellIndex = row * size + col
-                let completed: Bool
-                if isSealed {
-                    completed = sealedCellSet.contains(cellIndex)
-                } else if task.type == .compound {
-                    completed = CompoundEvaluation.evaluate(
-                        compound: task,
-                        childrenByCompound: childrenByCompound,
-                        taskById: taskMap,
-                        windowContext: windowContext
-                    )
-                } else if task.type == .achievement {
-                    completed = kernelCells[bt.id]?.isCompleted ?? false
-                } else if task.sharedCounterId != nil {
-                    // Linked counters: a window-stamped row resolves from its
-                    // ROOT's events in its own window (the kernel's rule, docs
-                    // §Derived-task carve-out amended 2026-09-23); any other
-                    // linked row reads THIS board's window (owner rule 2026-10-01).
-                    completed = resolveLinkedCounterDisplay(
-                        task: task, eventsByTaskId: eventsByTaskId,
-                        window: LinkedCounterWindow(board: board)
-                    ).isCompleted
-                } else {
-                    completed = resolveTaskWindowState(
-                        task: task,
-                        events: eventsByTaskId[task.id] ?? [],
-                        windowStart: board.startDate,
-                        windowEnd: boardWindowEnd(board)
-                    ).isCompleted
-                }
+                let completed = isSealed
+                    ? sealedCellSet.contains(cellIndex)
+                    : (kernelCells[bt.id]?.isCompleted ?? false)
                 cells.append(.task(completed: completed))
             }
         }
