@@ -25,7 +25,7 @@ final class TutorialCoordinatorTests: XCTestCase {
     private func makeCoordinator(progress: TutorialProgress = .empty) throws -> (TutorialCoordinator, AppDatabase) {
         let real = try AppDatabase.makeTestInstance()
         try real.saveUser(makeUser())
-        for lesson in TutorialLessonID.middleRow { TutorialTypedCache.clear(lesson) }
+        for lesson in TutorialLessonID.middleRow { TutorialTypedCache(userId: userId).clear(lesson) }
         return (TutorialCoordinator(userId: userId, database: real, progress: progress), real)
     }
 
@@ -538,6 +538,21 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertNil(coach.session)
         XCTAssertEqual(coach.progress, .empty)
         XCTAssertEqual(try savedProgress(db), .empty)
+    }
+
+    func test_typedCache_isScopedToTheUserAndInertWithoutOne() {
+        let suite = UserDefaults(suiteName: "tutorial-typed-cache-test")!
+        suite.removePersistentDomain(forName: "tutorial-typed-cache-test")
+        var a = TutorialTypedCache(userId: "a"); a.defaults = suite
+        var b = TutorialTypedCache(userId: "b"); b.defaults = suite
+        var none = TutorialTypedCache(userId: nil); none.defaults = suite
+        a.save(.createTask, ["verb": "Walk"])
+        XCTAssertEqual(a.load(.createTask), ["verb": "Walk"])
+        XCTAssertEqual(b.load(.createTask), [:], "another user never sees it")
+        none.save(.createTask, ["verb": "X"])
+        XCTAssertEqual(none.load(.createTask), [:], "a preview coordinator has no cache")
+        a.clear(.createTask)
+        XCTAssertEqual(a.load(.createTask), [:])
     }
 
     func test_previewCoordinator_runsWithoutADatabase() {

@@ -122,6 +122,19 @@ extension TutorialScrimShape {
     static let color = Color(red: 24 / 255, green: 18 / 255, blue: 11 / 255).opacity(0.62)
 }
 
+/// Just the holes (no outer rect): the mask that cuts them out of the scrim.
+struct TutorialHolesShape: Shape {
+    let holes: [(rect: CGRect, radius: CGFloat)]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for hole in holes {
+            path.addRoundedRect(in: hole.rect, cornerSize: CGSize(width: hole.radius, height: hole.radius))
+        }
+        return path
+    }
+}
+
 // MARK: - Overlay
 
 /// The scrim + holes + rings + coach mark for the running lesson's current step.
@@ -171,9 +184,20 @@ struct TutorialSpotlightOverlay: View {
         let notchOffset = hasTarget ? TutorialCoachGeometry.notchOffset(targetMidX: ringed[0].midX, containerWidth: geo.size.width) : 0
 
         ZStack(alignment: .top) {
-            // Scrim: swallows taps outside the holes and pulses the ring.
-            TutorialScrimShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) })
-                .fill(TutorialScrimShape.color, style: FillStyle(eoFill: true))
+            // Scrim: swallows taps outside the holes and pulses the ring. Drawn
+            // through a mask (not even-odd) so two holes that touch — the goal
+            // and unit fields — leave no hairline between them.
+            Rectangle()
+                .fill(TutorialScrimShape.color)
+                .mask {
+                    ZStack {
+                        Rectangle()
+                        TutorialHolesShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) })
+                            .fill(Color.black)
+                            .blendMode(.destinationOut)
+                    }
+                    .compositingGroup()
+                }
                 .contentShape(TutorialScrimShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) }), eoFill: true)
                 .onTapGesture { pulse += 1 }
                 .accessibilityHidden(true)

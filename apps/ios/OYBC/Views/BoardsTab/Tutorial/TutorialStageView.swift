@@ -23,7 +23,15 @@ struct TutorialStageView: View {
                     label: session.info.barLabel,
                     step: session.step,
                     stepCount: session.steps.count,
-                    onExit: { confirmingLeave = true; coach.requestLeave() }
+                    onExit: {
+                        // Over the complete card the lesson is done: ✕ is "Back to the board".
+                        if session.phase == .complete {
+                            coach.finishCompletedLesson(exit: .board)
+                        } else {
+                            confirmingLeave = true
+                            coach.requestLeave()
+                        }
+                    }
                 )
                 ZStack {
                     // The real screens run under the home indicator (their tab

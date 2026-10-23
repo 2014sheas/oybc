@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Split out of `BoardPlayView.swift` (frozen at its file-size cap) to make room
-// for the Getting Started tutorial hooks. Pure move, no behaviour change.
+// Split out of `BoardPlayView.swift`, which is frozen at its file-size cap
+// (`scripts/audit/file-size-allowlist.json`). Pure move, no behaviour change.
 extension BoardPlayView {
 
     // MARK: - Phase 6.3: per-cell achievement-task badge data

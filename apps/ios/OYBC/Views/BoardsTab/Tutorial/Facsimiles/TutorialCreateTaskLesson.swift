@@ -92,7 +92,7 @@ struct TutorialTasksFacsimile: View {
                             .frame(maxWidth: .infinity)
                             .risoCard(keyline: Riso.Keyline.dense, fill: .risoPaper2)
                     } else {
-                        ForEach(rows, id: \.title) { row in
+                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                             libraryRow(row.title, kind: row.kind, sub: row.sub)
                         }
                     }
@@ -177,21 +177,32 @@ struct TutorialNewTaskSheetFacsimile: View {
                 }
             }
         }
-        .onAppear { focus = focusTarget(step) }
-        .onChange(of: step) { _, now in focus = focusTarget(now) }
+        // Focus set after layout (a focus written during appear is often dropped).
+        .onAppear { DispatchQueue.main.async { focus = focusTarget(step) } }
+        .onChange(of: step) { _, now in DispatchQueue.main.async { focus = focusTarget(now) } }
         .toolbar {
+            // The number pad has no Return, so the keyboard carries the lit
+            // field's action; on the other fields it mirrors their Return.
             ToolbarItemGroup(placement: .keyboard) {
-                if focus == .goal {
-                    Spacer()
-                    RisoButton(title: "Next", kind: .gold, small: true) { perform(.fieldSubmitted(.goal)) }
-                        .padding(.vertical, 4)
-                }
+                Spacer()
+                RisoButton(title: focus == .quickAdd ? "Add" : "Next", kind: .gold, small: true) { keyboardAction() }
+                    .padding(.vertical, 4)
             }
         }
     }
 
-    /// Which field holds the keyboard at a step (the number pad has no Return,
-    /// so the goal field's Next lives on the keyboard toolbar).
+    /// The keyboard toolbar's button: the focused field's Return.
+    private func keyboardAction() {
+        switch focus {
+        case .quickAdd: perform(.quickAddSubmitted)
+        case .verb: perform(.fieldSubmitted(.verb))
+        case .goal: perform(.fieldSubmitted(.goal))
+        case .unit: perform(.fieldSubmitted(.unit))
+        case .wizardQuickAdd, nil: break
+        }
+    }
+
+    /// Which field holds the keyboard at a step.
     private func focusTarget(_ step: Int) -> TutorialField? {
         switch step {
         case Step.quickAdd: return .quickAdd

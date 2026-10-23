@@ -49,7 +49,9 @@ struct TutorialCreateBoardTasksFacsimile: View {
                         .padding(.bottom, 40)
                     }
                 }
-                .onChange(of: step) { _, now in scroll(proxy, to: now) }
+                // The member panel is inserted in the same update as the step
+                // change, so the scroll waits for that layout to land.
+                .onChange(of: step) { _, now in DispatchQueue.main.async { scroll(proxy, to: now) } }
                 .onAppear { DispatchQueue.main.async { scroll(proxy, to: step) } }
             }
         } footer: {

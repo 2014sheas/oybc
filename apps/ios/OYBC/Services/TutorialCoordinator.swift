@@ -65,6 +65,8 @@ final class TutorialCoordinator: ObservableObject {
     private let database: AppDatabase
     private let userId: String?
     private let persists: Bool
+    /// The device-local resume cache, scoped to this user (inert for a preview).
+    private var typedCache: TutorialTypedCache { TutorialTypedCache(userId: userId) }
 
     /// - Parameters:
     ///   - userId: The signed-in user; nil makes a preview coordinator.
@@ -138,7 +140,7 @@ final class TutorialCoordinator: ObservableObject {
     func reset() {
         tearDown()
         justCompleted = nil
-        for lesson in TutorialLessonID.middleRow { TutorialTypedCache.clear(lesson) }
+        for lesson in TutorialLessonID.middleRow { typedCache.clear(lesson) }
         persist(.empty)
     }
 
@@ -155,8 +157,8 @@ final class TutorialCoordinator: ObservableObject {
         if case .inProgress(let savedStep) = progress.state(of: lesson) {
             saved = min(savedStep, max(count - 1, 0))
         }
-        if saved == 0 { TutorialTypedCache.clear(lesson) }
-        guard let state = TutorialStageState.implied(lesson: lesson, step: saved, typed: TutorialTypedCache.load(lesson)) else { return false }
+        if saved == 0 { typedCache.clear(lesson) }
+        guard let state = TutorialStageState.implied(lesson: lesson, step: saved, typed: typedCache.load(lesson)) else { return false }
         isClosing = false
         session = TutorialSession(lesson: lesson, step: saved, resumed: saved > 0, state: state)
         return true
@@ -191,7 +193,7 @@ final class TutorialCoordinator: ObservableObject {
                 recordStep(current.lesson, step: current.step)
             }
         }
-        if let session { TutorialTypedCache.save(session.lesson, session.state.typed) }
+        if let session, session.phase == .running { typedCache.save(session.lesson, session.state.typed) }
     }
 
     /// The coach mark's Next (read-only steps).
@@ -207,7 +209,7 @@ final class TutorialCoordinator: ObservableObject {
         var next = progress
         next.set(current.lesson, .done)
         if next != progress { persist(next) }
-        TutorialTypedCache.clear(current.lesson)
+        typedCache.clear(current.lesson)
         if exit != nil { finishCompletedLesson(exit: exit ?? .board) }
     }
 
@@ -232,7 +234,7 @@ final class TutorialCoordinator: ObservableObject {
     func leave() {
         guard let current = session else { return }
         recordStep(current.lesson, step: current.step)
-        TutorialTypedCache.save(current.lesson, current.state.typed)
+        typedCache.save(current.lesson, current.state.typed)
         var ending = current
         ending.phase = .running
         session = ending
@@ -304,25 +306,34 @@ extension TutorialWrite {
 
 // MARK: - Typed cache
 
-/// What the person typed in a lesson, kept device-locally so a resume rebuilds
-/// the facsimile with their own words ("Resume restores … task typed"). Not
-/// progress — that syncs in `TutorialProgress`.
-enum TutorialTypedCache {
-    private static func key(_ lesson: TutorialLessonID) -> String { "oybc.tutorial.typed.\(lesson.rawValue)" }
+/// What the person typed in a lesson, kept device-locally per user so a resume
+/// rebuilds the facsimile with their own words ("Resume restores … task
+/// typed"). Not progress — that syncs in `TutorialProgress`. A preview
+/// coordinator (no user) has no cache.
+struct TutorialTypedCache {
+    let userId: String?
+    var defaults: UserDefaults = .standard
 
-    static func load(_ lesson: TutorialLessonID) -> [String: String] {
-        UserDefaults.standard.dictionary(forKey: key(lesson)) as? [String: String] ?? [:]
+    private func key(_ lesson: TutorialLessonID) -> String? {
+        userId.map { "oybc.tutorial.typed.\($0).\(lesson.rawValue)" }
     }
 
-    static func save(_ lesson: TutorialLessonID, _ typed: [String: String]) {
+    func load(_ lesson: TutorialLessonID) -> [String: String] {
+        guard let key = key(lesson) else { return [:] }
+        return defaults.dictionary(forKey: key) as? [String: String] ?? [:]
+    }
+
+    func save(_ lesson: TutorialLessonID, _ typed: [String: String]) {
+        guard let key = key(lesson) else { return }
         if typed.isEmpty {
-            UserDefaults.standard.removeObject(forKey: key(lesson))
+            defaults.removeObject(forKey: key)
         } else {
-            UserDefaults.standard.set(typed, forKey: key(lesson))
+            defaults.set(typed, forKey: key)
         }
     }
 
-    static func clear(_ lesson: TutorialLessonID) {
-        UserDefaults.standard.removeObject(forKey: key(lesson))
+    func clear(_ lesson: TutorialLessonID) {
+        guard let key = key(lesson) else { return }
+        defaults.removeObject(forKey: key)
     }
 }
