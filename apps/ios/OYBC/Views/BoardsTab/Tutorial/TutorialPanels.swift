@@ -1,5 +1,44 @@
 import SwiftUI
 
+// MARK: - Start sheet (handoff: every lesson, from the board)
+
+/// The medium sheet a free square opens before its stage: kicker
+/// "LESSON n · m STEPS", the title, one expectation line, Start and "Not now".
+struct TutorialStartSheet: View {
+    let info: TutorialLessonInfo
+    var onStart: () -> Void = {}
+    var onNotNow: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Lesson \(info.number) · \(info.steps.count) steps").risoKicker()
+            Text(info.title)
+                .font(.risoHead(26, .extraBold))
+                .tracking(-0.52)
+                .foregroundStyle(Color.risoInk)
+            Text(info.startLine)
+                .font(.risoBody(14, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            RisoButton(title: "Start", kind: .primary, fullWidth: true, large: true, action: onStart)
+            Button(action: onNotNow) {
+                Text("Not now")
+                    .font(.risoBody(14, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Riso.gutter)
+        .padding(.top, 28)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(RisoPaperBackground().ignoresSafeArea())
+    }
+}
+
 // MARK: - Pro placeholder sheet (handoff 05)
 
 /// The stub sheet a locked Pro square opens: lock tile, "PRO LESSON" kicker,
@@ -47,10 +86,14 @@ struct TutorialProSheet: View {
 
 // MARK: - Lesson complete card (handoff 06)
 
-/// The small card that closes a lesson over the last real screen.
+/// The card that closes a lesson over the last dimmed facsimile: a 44pt green
+/// check, "Lesson complete", one subtitle line, "Back to the board" and, when
+/// the lesson has one, a plain secondary ("Open Tasks" / "Open Create").
 struct TutorialLessonCompleteCard: View {
     let subtitle: String
+    var secondary: TutorialExit? = nil
     var onBack: () -> Void = {}
+    var onSecondary: (TutorialExit) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -68,8 +111,19 @@ struct TutorialLessonCompleteCard: View {
                 .font(.risoBody(13, .semibold))
                 .foregroundStyle(Color.risoMuted)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             RisoButton(title: "Back to the board", kind: .primary, fullWidth: true, action: onBack)
                 .padding(.top, 10)
+            if let secondary {
+                Button { onSecondary(secondary) } label: {
+                    Text(secondary.label)
+                        .font(.risoBody(13, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(EdgeInsets(top: 22, leading: 20, bottom: 20, trailing: 20))
         .frame(maxWidth: 330)
@@ -142,19 +196,25 @@ struct TutorialBingoToast: View {
     }
 }
 
-// MARK: - Leave sheet (handoff 03)
+// MARK: - Leave sheet (handoff: exit)
 
-/// "Leave this lesson?" — medium sheet raised by the coach mark's ✕.
+/// "Leave this lesson?" — medium sheet raised by the bar's ✕.
 struct TutorialLeaveSheet: View {
+    /// 0-based current step (the sheet names it 1-based).
+    var step: Int = 0
     var onKeepGoing: () -> Void = {}
     var onLeave: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Leave this lesson?").risoH2()
-            Text("Your place is saved. The square shows where you stopped.")
+            Text("Leave this lesson?")
+                .font(.risoHead(26, .extraBold))
+                .tracking(-0.52)
+                .foregroundStyle(Color.risoInk)
+            Text("Your place is saved. Tap the square to pick up at step \(step + 1).")
                 .font(.risoBody(14, .semibold))
                 .foregroundStyle(Color.risoMuted)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
             RisoButton(title: "Keep going", kind: .primary, fullWidth: true, large: true, action: onKeepGoing)
             RisoButton(title: "Leave", kind: .neutral, fullWidth: true, large: true, action: onLeave)

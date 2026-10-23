@@ -175,6 +175,11 @@ struct MainTabView: View {
                         onStartFirstBoard: {
                             boardsPath = NavigationPath()
                             selectedTab = 2
+                        },
+                        // Lesson 1's "Open Tasks": the real Tasks tab.
+                        onOpenTasks: {
+                            boardsPath = NavigationPath()
+                            selectedTab = 1
                         }
                     )
                 }

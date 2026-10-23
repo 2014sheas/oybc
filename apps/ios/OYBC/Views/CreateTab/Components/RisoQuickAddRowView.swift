@@ -106,16 +106,11 @@ struct RisoQuickAddRowView: View {
     /// for); false for the board window's automatic default.
     var onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue, _ typed: Bool) -> Void)? = nil
 
-    /// Focus the field (keyboard up) as soon as the row appears — the Getting
-    /// Started "Type a task" step. Default false: every other host leaves the
-    /// keyboard down until the person taps the field.
-    var autoFocus: Bool = false
-
     @State private var text: String = ""
     /// The text a pick left in the field — the dropdown hides while it is unchanged.
     @State private var heldText: String? = nil
     @State private var form = CreateFormViewModel()
-    /// The host's database (the tutorial sandbox inside a lesson).
+    /// The host's database.
     @Environment(\.appDatabase) private var database
     @FocusState private var focused: Bool
 
@@ -193,8 +188,7 @@ struct RisoQuickAddRowView: View {
         seedText: String = "",
         presetCountsTowardCounterId: String? = nil,
         linksCounterPicks: Bool = false,
-        onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue, _ typed: Bool) -> Void)? = nil,
-        autoFocus: Bool = false
+        onCounterGoalPicked: ((_ root: OYBC.Task, _ goal: CountValue, _ typed: Bool) -> Void)? = nil
     ) {
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
@@ -220,7 +214,6 @@ struct RisoQuickAddRowView: View {
         self.presetCountsTowardCounterId = presetCountsTowardCounterId
         self.linksCounterPicks = linksCounterPicks
         self.onCounterGoalPicked = onCounterGoalPicked
-        self.autoFocus = autoFocus
     }
 
     /// The preset applies to an immediate Normal create only.
@@ -232,10 +225,7 @@ struct RisoQuickAddRowView: View {
 
     var body: some View {
         quickAddContent
-            .onAppear {
-                form.useDatabase(database)
-                if autoFocus { focused = true }
-            }
+            .onAppear { form.useDatabase(database) }
     }
 
     private var quickAddContent: some View {

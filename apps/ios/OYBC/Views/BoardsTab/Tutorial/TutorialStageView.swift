@@ -1,15 +1,11 @@
 import SwiftUI
 
-/// The full-screen "lesson stage": hosts the REAL screen a lesson teaches over
-/// the right database (the user's own for lesson 1, the throwaway sandbox for
-/// lessons 2-3), with the walkthrough layers above it. Presented from the
-/// tutorial board as a full-screen cover.
-///
-/// Deviation from "navigates to the lesson's tab": the stage mounts the real
-/// view (`TasksTabView`, `CreateHubView`, `BoardPlayView`) in its own
-/// `NavigationStack` instead of driving the live tab bar, so a lesson can never
-/// strand the user in another tab and the sandbox database reaches every
-/// screen it needs through plain injection.
+/// The full-screen "lesson stage" (handoff `README` §The tutorial stage): the
+/// ink tutorial bar over a tutorial-owned FACSIMILE of the app screen, fed by
+/// the lesson's fixture, with the scrim + ring + coach mark above it. Exactly
+/// one control per step is wired; everything else is drawn inert. The ✕ in the
+/// bar is the only way out (no interactive dismiss, no system back). Presented
+/// from the tutorial board as a full-screen cover after the start sheet.
 struct TutorialStageView: View {
     let lesson: TutorialLessonID
 
@@ -17,19 +13,45 @@ struct TutorialStageView: View {
     @EnvironmentObject private var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
-    @State private var tasksPath = NavigationPath()
+    /// The "Leave this lesson?" sheet (raised from the bar's ✕).
+    @State private var confirmingLeave = false
 
     var body: some View {
-        ZStack {
-            lessonScreen
-            if let session = coach.session, session.phase == .complete, !coach.isClosing {
-                completeOverlay(session)
+        VStack(spacing: 0) {
+            if let session = coach.session {
+                TutorialBar(
+                    label: session.info.barLabel,
+                    step: session.step,
+                    stepCount: session.steps.count,
+                    onExit: { confirmingLeave = true; coach.requestLeave() }
+                )
+                ZStack {
+                    // The real screens run under the home indicator (their tab
+                    // bars and footers carry that padding), so the facsimile does too.
+                    facsimile(session)
+                        .ignoresSafeArea(.container, edges: .bottom)
+                        .tutorialSpotlight(coach: coach)
+                    if session.phase == .complete, !coach.isClosing {
+                        completeOverlay(session)
+                    }
+                }
+                .clipped()
             }
         }
+        .background(Color.risoPaper.ignoresSafeArea())
         .preferredColorScheme(forcedColorScheme)
-        .environment(\.tutorialCoach, coach)
-        .environment(\.tutorialSignals, coach.signals)
-        .environment(\.appDatabase, coach.sandboxDatabase ?? .shared)
+        .interactiveDismissDisabled(true)
+        .sheet(isPresented: $confirmingLeave, onDismiss: {
+            if coach.session?.phase == .confirmingLeave { coach.keepGoing() }
+        }) {
+            TutorialLeaveSheet(
+                step: coach.session?.step ?? 0,
+                onKeepGoing: { confirmingLeave = false },
+                onLeave: { confirmingLeave = false; coach.leave() }
+            )
+            .presentationDetents([.medium])
+            .interactiveDismissDisabled(false)
+        }
         .onChange(of: coach.isClosing) { _, closing in
             if closing { dismiss() }
         }
@@ -44,46 +66,18 @@ struct TutorialStageView: View {
         }
     }
 
-    // MARK: Screens
+    // MARK: Facsimiles
 
     @ViewBuilder
-    private var lessonScreen: some View {
-        let userId = authService.currentUser?.id ?? ""
-        switch lesson {
-        case .createTask:
-            NavigationStack(path: $tasksPath) {
-                TasksTabView(userId: userId, path: $tasksPath, onOpenBoard: { _ in })
-                    .tutorialCoachLayer(isRoot: true)
-            }
-        case .createBoard:
-            NavigationStack {
-                CreateHubView(
-                    userId: userId,
-                    preferences: sandboxPreferences,
-                    onBoardCompleted: { _, _ in },
-                    database: coach.sandboxDatabase ?? .shared
-                )
-                .tutorialCoachLayer(isRoot: true)
-            }
-        case .completeBoard:
-            NavigationStack {
-                if let boardId = coach.session?.sampleBoardId, let database = coach.sandboxDatabase {
-                    BoardPlayView(boardId: boardId, embedded: true, database: database)
-                        .tutorialCoachLayer(isRoot: true)
-                }
-            }
-        default:
-            EmptyView()
+    private func facsimile(_ session: TutorialSession) -> some View {
+        switch session.state {
+        case .createTask(let state):
+            TutorialCreateTaskLesson(state: state, step: session.step, perform: { coach.perform($0) })
+        case .createBoard(let state):
+            TutorialCreateBoardLesson(state: state, step: session.step, perform: { coach.perform($0) })
+        case .completeBoard(let state):
+            TutorialCompleteBoardLesson(state: state, step: session.step, perform: { coach.perform($0) })
         }
-    }
-
-    /// The wizard's defaults inside lesson 2: a 3×3 with a free space, so one
-    /// supplied pool fills the board.
-    private var sandboxPreferences: UserPreferences {
-        var prefs = authService.userPreferences
-        prefs.defaultBoardSize = .three
-        prefs.defaultCenterType = .free
-        return prefs
     }
 
     // MARK: Lesson complete
@@ -91,11 +85,23 @@ struct TutorialStageView: View {
     private func completeOverlay(_ session: TutorialSession) -> some View {
         ZStack {
             TutorialScrimShape.color.ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {}
             TutorialLessonCompleteCard(
-                subtitle: TutorialCatalog.info(for: session.lesson).completeSubtitle,
-                onBack: { coach.finishCompletedLesson() }
+                subtitle: completeSubtitle(session),
+                secondary: session.info.completeSecondary,
+                onBack: { coach.finishCompletedLesson(exit: .board) },
+                onSecondary: { exit in coach.finishCompletedLesson(exit: exit) }
             )
         }
         .transition(.opacity)
+    }
+
+    /// Lesson 1 names the two tasks it wrote; the others use their fixed line.
+    private func completeSubtitle(_ session: TutorialSession) -> String {
+        if case .createTask(let s) = session.state, let added = s.addedTitle, let counting = s.countingTitle {
+            return "\(added) and \(counting) are in your library."
+        }
+        return session.info.completeSubtitle
     }
 }

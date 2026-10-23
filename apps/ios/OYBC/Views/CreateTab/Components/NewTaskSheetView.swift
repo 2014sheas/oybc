@@ -40,7 +40,6 @@ struct NewTaskSheetView: View {
     var database: AppDatabase = .shared
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.tutorialSignals) private var tutorialSignals
 
     /// The preset counter's display name (the title's `UnitTagView`); nil until loaded / without a preset.
     @State private var counterName: String?
@@ -91,13 +90,6 @@ struct NewTaskSheetView: View {
                 }
             }
         }
-        // Getting Started lesson 1: the walkthrough lights this sheet's controls
-        // and the sheet closes itself when the lesson completes. Inert otherwise.
-        .tutorialCoachLayer()
-        .interactiveDismissDisabled(tutorialSignals.active)
-        .onChange(of: tutorialSignals.isCompleting) { _, completing in
-            if completing { dismiss() }
-        }
     }
 }
 
@@ -124,9 +116,6 @@ struct NewTaskSheetContentView: View {
     /// Special-panel submit copy; the sheet passes "Add to library" for every host.
     var submitLabel: String = "Add to board ✦"
 
-    @Environment(\.tutorialCoach) private var tutorialCoach
-    @Environment(\.tutorialSignals) private var tutorialSignals
-
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
 
@@ -143,19 +132,15 @@ struct NewTaskSheetContentView: View {
                         defaultEndDate: nil,
                         onTaskCreated: { taskId, title, type in
                             onTaskCreated(taskId, title, type)
-                            tutorialCoach?.handle(.normalTaskCreated)
                         },
                         onPendingCreated: nil,
                         onLibraryReloadRequested: onLibraryReloadRequested,
-                        presetCountsTowardCounterId: presetCountsTowardCounterId,
-                        // Lesson 1 opens this sheet with the keyboard up ("Type a task").
-                        autoFocus: tutorialSignals.active
+                        presetCountsTowardCounterId: presetCountsTowardCounterId
                     )
                 }
                 .padding(12)
                 .risoCard(fill: .risoPaper2)
                 .risoHardShadow(Riso.Shadow.small)
-                .tutorialAnchor(.quickAddCard)
             }
 
             // Special-type panel — receives the real task library so the
@@ -172,7 +157,6 @@ struct NewTaskSheetContentView: View {
                     taskLibrary: taskLibrary,
                     onTaskCreated: { taskId, title, type in
                         onTaskCreated(taskId, title, type)
-                        if type == "counting" { tutorialCoach?.handle(.countingTaskCreated) }
                     },
                     onCompoundCreated: { _ in
                         onLibraryReloadRequested()

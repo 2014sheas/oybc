@@ -94,7 +94,6 @@ struct BoardWizardSetupStepView: View {
                     // reports/blocks it) when Step 1 isn't valid yet.
                     .opacity(controller.isStep1Valid ? 1 : 0.45)
                     .disabled(!controller.isStep1Valid)
-                    .tutorialAnchor(.wizardNext)
             }
             .padding(.horizontal, Riso.gutter)
             .padding(.top, 16)

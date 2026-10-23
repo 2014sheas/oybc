@@ -58,10 +58,6 @@ struct RisoSourceRowView: View {
     var onSetPartTarget: (_ taskId: String, _ childId: String, _ target: CountValue?) -> Void = { _, _, _ in }
     var onSetPartVary: (_ taskId: String, _ childId: String, _ level: VaryLevel) -> Void = { _, _, _ in }
 
-    // Getting Started hooks — inert outside a lesson.
-    @Environment(\.tutorialCoach) private var tutorialCoach
-    @Environment(\.tutorialSignals) private var tutorialSignals
-
     private var isDefaultRange: Bool { source.min == 0 && source.max == nil }
     private var effectiveMax: Int { source.max ?? availableCount }
 
@@ -114,21 +110,15 @@ struct RisoSourceRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(supply.displayName)")
-            // A lesson's pool stays on the board.
-            .tutorialDimmed(tutorialSignals.sandboxed)
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 11)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if !isExpanded { tutorialCoach?.handle(.sourceRowExpanded) }
-            onToggleExpanded()
-        }
+        .onTapGesture(perform: onToggleExpanded)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(supply.displayName), \(subtitle)")
         .accessibilityHint(isExpanded ? "Collapses the source" : "Expands the source")
         .accessibilityAddTraits(.isButton)
-        .tutorialAnchor(.sourceRow)
     }
 
     /// Pool = ink fill + paper "P"; board = gold fill + ink-static "B"
@@ -298,6 +288,5 @@ struct RisoSourceRowView: View {
                 )
             }
         }
-        .tutorialAnchor(.memberRows)
     }
 }

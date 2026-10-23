@@ -323,9 +323,6 @@ struct RisoMemberRuleRowView: View {
     /// this at its default.
     var initiallyExpanded: Bool = false
 
-    /// Getting Started hook (the ✕ is a lesson-2 step) — inert outside a lesson.
-    @Environment(\.tutorialCoach) private var tutorialCoach
-
     /// The 69pt indent range lines / the split line / part lines sit at:
     /// the row's own 40pt leading padding plus 20pt badge + 8pt gap + 1pt.
     private static let indent: CGFloat = 29
@@ -519,10 +516,7 @@ struct RisoMemberRuleRowView: View {
     private var trailingControl: some View {
         switch state {
         case .included:
-            Button {
-                tutorialCoach?.handle(.memberExcluded)
-                onToggleExclude()
-            } label: {
+            Button(action: onToggleExclude) {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.risoMuted)

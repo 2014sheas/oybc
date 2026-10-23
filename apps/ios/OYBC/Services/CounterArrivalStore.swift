@@ -23,19 +23,6 @@ final class CounterArrivalStore {
         self.defaults = defaults
     }
 
-    /// The defaults suite a tutorial sandbox lesson's boards use, so their
-    /// last-seen snapshots never touch the user's own store. Cleared when the
-    /// lesson ends (`TutorialCoordinator`).
-    static let tutorialSuiteName = "com.oybc.tutorial-sandbox"
-
-    /// The store for boards living in `database`: the standard one for the app
-    /// database, the throwaway tutorial suite for a sandbox.
-    static func forDatabase(_ database: AppDatabase) -> CounterArrivalStore {
-        database === AppDatabase.shared
-            ? CounterArrivalStore()
-            : CounterArrivalStore(defaults: UserDefaults(suiteName: tutorialSuiteName) ?? .standard)
-    }
-
     private func key(boardId: String) -> String {
         "counterArrivals.lastSeen.\(boardId)"
     }

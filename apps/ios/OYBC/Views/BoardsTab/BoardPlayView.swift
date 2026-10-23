@@ -136,7 +136,6 @@ struct BoardPlayView: View {
     /// `BoardActionsPresenter`'s `onRemoved` wiring below. Nil for the
     /// standalone destination, where it's never called.
     var onBoardRemoved: (() -> Void)? = nil
-    @Environment(\.tutorialCoach) var tutorialCoach // Getting Started hooks; nil outside a lesson
     @EnvironmentObject var authService: AuthService
     // internal for the +BoardActions extension split (Board Edit consolidation)
     @Environment(\.dismiss) var dismiss
@@ -277,7 +276,7 @@ struct BoardPlayView: View {
         onResumeDraft: ((String) -> Void)? = nil,
         onEditModeChange: ((Bool) -> Void)? = nil,
         onBoardRemoved: (() -> Void)? = nil,
-        database: AppDatabase = .shared // the tutorial sandbox in a lesson
+        database: AppDatabase = .shared
     ) {
         self.boardId = boardId
         self.onOpenBoard = onOpenBoard
@@ -287,7 +286,7 @@ struct BoardPlayView: View {
         self.onEditModeChange = onEditModeChange
         self.onBoardRemoved = onBoardRemoved
         _viewModel = StateObject(
-            wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil, database: database, arrivalStore: .forDatabase(database))
+            wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil, database: database)
         )
     }
 
@@ -483,7 +482,6 @@ struct BoardPlayView: View {
                             withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
                         }
                     )
-                    .tutorialAnchor(.undoToast)
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 100)
                 }
@@ -633,7 +631,6 @@ struct BoardPlayView: View {
         .onChange(of: viewModel.board?.id) { _, _ in
             refreshStreaks()
         }
-        .onChange(of: viewModel.applyCount) { _, _ in reportTutorialIncompleteSquares() }
         .onDisappear {
             // P3 — re-snapshot the last-seen baseline on leaving (belt-and-suspenders).
             viewModel.snapshotArrivalsOnDisappear()
@@ -713,7 +710,6 @@ struct BoardPlayView: View {
                 originBoardId: viewModel.board?.id,
                 database: viewModel.database
             )
-            .tutorialExitGuard()
         }
         // Share sheet — presented from the moment overlay's share button
         // (the overlay stays beneath it); the kind is the open moment's.
@@ -961,12 +957,11 @@ struct BoardPlayView: View {
             compoundRequiredCount: render.compoundRequiredCount,
             onTap: { handlePlaySquareTap(boardTask: boardTask, task: task) }
         )
-        .modifier(TutorialHoldGate { squareMenu(boardTask: boardTask, task: task, render: render) })
+        .contextMenu { squareMenu(boardTask: boardTask, task: task, render: render) }
         // P3 — pulse the square when it just arrived from an elsewhere log.
         // Applied at the call site (not inside RisoBoardPlayCell) so the
         // snapshot-covered cell internals stay untouched.
         .arrivePulse(active: task.map { arrivedTaskIds.contains($0.id) } ?? false)
-        .tutorialAnchor(.square(index), radius: Riso.cellRadius)
     }
 
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)
@@ -1019,7 +1014,6 @@ struct BoardPlayView: View {
     // internal for the +BoardActions extension split
     func triggerBoardSavedToast() {
         withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = true }
-        tutorialCoach?.handle(.editSaved)
         _Concurrency.Task { @MainActor in
             try? await _Concurrency.Task.sleep(nanoseconds: 2_400_000_000)
             withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = false }

@@ -202,8 +202,6 @@ struct BoardWizardTasksStepView: View {
 
     // Board Sources P2 — "Add from a pool or board" sheet.
     @State var showSourceSheet = false
-    @Environment(\.tutorialSignals) private var tutorialSignals
-    @Environment(\.tutorialCoach) var tutorialCoach
     @Environment(\.appDatabase) private var appDatabase
 
     /// The pulled source a ✕ (or a sheet un-toggle) asked to remove while it
@@ -265,7 +263,7 @@ struct BoardWizardTasksStepView: View {
         return combined
     }
 
-    var isCountSatisfied: Bool { capacity >= tasksRequired }
+    private var isCountSatisfied: Bool { capacity >= tasksRequired }
 
     /// Counter-family exclusivity (2026-09-08) — collisions visible in
     /// the wizard pool, for the "shares a counter with 'X' · one per
@@ -415,7 +413,6 @@ struct BoardWizardTasksStepView: View {
                             defaultEndDate: currentEndDate,
                             onTaskCreated: { taskId, title, type in
                                 onTaskCreated(taskId, title, type)
-                                tutorialCoach?.handle(.manualTaskAdded)
                             },
                             onPendingCreated: onPendingCreated,
                             onLibraryReloadRequested: onLibraryReloadRequested,
@@ -431,7 +428,6 @@ struct BoardWizardTasksStepView: View {
                             selectedIds: selectedTaskIds,
                             onExistingTaskPicked: { task in
                                 toggleSelection(task.id)
-                                tutorialCoach?.handle(.manualTaskAdded)
                             },
                             linksCounterPicks: !isRecurring,
                             onCounterGoalPicked: { root, goal, typed in
@@ -442,12 +438,10 @@ struct BoardWizardTasksStepView: View {
                     .padding(12)
                     .risoCard(fill: .risoPaper2)
                     .risoHardShadow(Riso.Shadow.small)
-                    .tutorialAnchor(.wizardQuickAdd)
 
                     // Special-type panel — pass effectiveAllTasks so the
                     // inline compound builder can autocomplete against live
-                    // + pending tasks without a separate GRDB fetch. A lesson
-                    // adds a plain task by hand, so the panel dims there.
+                    // + pending tasks without a separate GRDB fetch.
                     RisoSpecialTaskPanel(
                         userId: userId,
                         defaultTimeframe: currentTimeframe,
@@ -464,7 +458,6 @@ struct BoardWizardTasksStepView: View {
                         onPendingCreated: onPendingCreated,
                         onLibraryReloadRequested: onLibraryReloadRequested
                     )
-                    .tutorialDimmed(tutorialSignals.sandboxed)
                 }
 
                 // 3. Add from a pool or board (Board Sources P2, frame 2a) —
@@ -544,13 +537,6 @@ struct BoardWizardTasksStepView: View {
                 guard let id = newValue else { return }
                 withAnimation { proxy.scrollTo(id, anchor: .top) }
             }
-            // A lesson's expanded pool scrolls to the top so its member rows
-            // (the next step's spotlight) are on screen — the scrim swallows
-            // scroll drags outside the lit controls.
-            .onChange(of: expandedSourceIds) { before, after in
-                guard tutorialSignals.active, let id = after.subtracting(before).first else { return }
-                withAnimation { proxy.scrollTo(id, anchor: .top) }
-            }
         }
         .background(RisoPaperBackground())
         .safeAreaInset(edge: .bottom) {
@@ -574,7 +560,6 @@ struct BoardWizardTasksStepView: View {
         // request here means the dialog goes up only once the sheet is
         // genuinely gone — no timer, no animation race.
         .sheet(isPresented: $showSourceSheet, onDismiss: {
-            tutorialSourceSheetClosed()
             if let queued = sourceRemovalAfterSheetDismiss {
                 sourceRemovalAfterSheetDismiss = nil
                 pendingSourceRemoval = queued
@@ -599,8 +584,7 @@ struct BoardWizardTasksStepView: View {
                     } else {
                         onPullBoardSource(boardId)
                     }
-                },
-                singlePick: tutorialSignals.sandboxed
+                }
             )
         }
         // The remove-source confirm (owner ruling 2026-09-19). A native
@@ -760,7 +744,6 @@ struct BoardWizardTasksStepView: View {
                     onSetPartTarget: { onSetPartTarget(source.sourceId, $0, $1, $2) },
                     onSetPartVary: { onSetPartVary(source.sourceId, $0, $1, $2) }
                 )
-                .id(source.sourceId)
             }
         )
     }
@@ -945,7 +928,6 @@ struct BoardWizardTasksStepView: View {
             RisoButton(title: "Next ›", kind: isRecurring ? .blue : .primary, fullWidth: true) {
                 onNext()
             }
-            .tutorialAnchor(.wizardNext)
             // Real disabled state (not just .allowsHitTesting) so VoiceOver
             // reports + blocks it; dim cue retained.
             .opacity(canAdvance ? 1 : 0.45)

@@ -61,8 +61,6 @@ struct CounterLogToastView: View {
 
     /// Set once `onDone` has fired (a timer and a touch can both arrive).
     @State private var done = false
-    /// A tutorial step pointing at this toast keeps it up (released by `onChange`).
-    @Environment(\.tutorialSignals) private var tutorialSignals
 
     static func text(amount: CountValue, unit: String, verb: Verb, kind: CountKind) -> String {
         let a = formatCountWithUnit(amount, kind: kind, unit: unit)
@@ -70,7 +68,7 @@ struct CounterLogToastView: View {
     }
 
     private func finish() {
-        guard !done, !tutorialSignals.holdsToast else { return }
+        guard !done else { return }
         done = true
         onDone()
     }
@@ -82,7 +80,6 @@ struct CounterLogToastView: View {
             if let detail { detailCard(detail) } else { logCard }
         }
         .accessibilityElement(children: .combine)
-        .onChange(of: tutorialSignals.holdsToast) { _, held in if !held { finish() } }
         // Any other touch — a tap, a scroll — dismisses it (it must not get in the way).
         .dismissOnOutsideTouch(perform: finish)
         .task {

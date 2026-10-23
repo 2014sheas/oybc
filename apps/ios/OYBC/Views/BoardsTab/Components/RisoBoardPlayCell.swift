@@ -103,10 +103,6 @@ struct RisoBoardPlayCell: View {
     /// from its beat, never from a view's mount). The play grid leaves it nil.
     var popToken: Int? = nil
 
-    /// A Getting Started lesson lets a square accept only the gesture its step
-    /// teaches; `.free` (no lesson) is the default.
-    @Environment(\.tutorialSignals) private var tutorialSignals
-
     // MARK: - Animation
 
     /// Animate the pop when the cell transitions from incomplete → complete.
@@ -194,7 +190,7 @@ struct RisoBoardPlayCell: View {
         .zIndex(cellZIndex)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isInteractionLocked, !isCenter, tutorialSignals.squareInteraction.allowsTap else { return }
+            guard !isInteractionLocked, !isCenter else { return }
             onTap?()
         }
         // Accessibility: collapse the cell's text/badges into one element with

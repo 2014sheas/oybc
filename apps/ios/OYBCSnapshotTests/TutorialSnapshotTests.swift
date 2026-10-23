@@ -3,11 +3,11 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the Getting Started tutorial (handoff 01-07): the pinned
-/// Boards-tab card, the nine-square board in each state, the Pro stub sheet, the
-/// lesson-complete card, the free-row card, the Bingo toast, the walkthrough
-/// layers (coach mark, scrim + spotlight over a real control) and the tutorial
-/// Greenlog. Light + dark.
+/// Snapshot coverage for the Getting Started tutorial: the pinned Boards-tab
+/// card, the nine-square board in each state, the start / Pro / leave sheets,
+/// the lesson-complete card, the free-row card, the Bingo toast, the stage
+/// parts (tutorial bar, compact coach mark, the scrim + ring over a facsimile),
+/// lesson 1's facsimiles step by step, and the tutorial Greenlog. Light + dark.
 @MainActor
 final class TutorialSnapshotTests: XCTestCase {
 
@@ -26,7 +26,7 @@ final class TutorialSnapshotTests: XCTestCase {
 
     private var fresh: TutorialProgress { .empty }
 
-    /// Create a task done, Create a board left at step 3 of 7.
+    /// Create a task done, Create a board left at step 4 of 9.
     private var inProgress: TutorialProgress {
         var p = TutorialProgress.empty
         p.set(.createTask, .done)
@@ -78,100 +78,118 @@ final class TutorialSnapshotTests: XCTestCase {
     func testBoardAllDoneLight() { snap(boardContent(allDone), height: 640) }
     func testBoardAllDoneDark() { snap(boardContent(allDone), height: 640, dark: true) }
 
-    // MARK: - Pro stub, lesson complete, toast, leave (handoff 03, 05, 06)
+    // MARK: - Sheets: start, Pro, leave
+
+    func testStartSheetLesson1Light() { snap(TutorialStartSheet(info: TutorialCatalog.info(for: .createTask)), height: 360) }
+    func testStartSheetLesson2Dark() { snap(TutorialStartSheet(info: TutorialCatalog.info(for: .createBoard)), height: 360, dark: true) }
+    func testStartSheetLesson3Light() { snap(TutorialStartSheet(info: TutorialCatalog.info(for: .completeBoard)), height: 360) }
 
     func testProSheetLight() { snap(TutorialProSheet(title: "Multi-step tasks"), height: 420) }
     func testProSheetDark() { snap(TutorialProSheet(title: "Multi-step tasks"), height: 420, dark: true) }
 
-    private func completeCard(_ subtitle: String) -> some View {
+    func testLeaveSheetStep3Light() { snap(TutorialLeaveSheet(step: 2), height: 360) }
+
+    // MARK: - Lesson complete, free-row card, toast (handoff 06, 07)
+
+    private func completeCard(_ subtitle: String, secondary: TutorialExit?) -> some View {
         ZStack {
             TutorialScrimShape.color
-            TutorialLessonCompleteCard(subtitle: subtitle)
+            TutorialLessonCompleteCard(subtitle: subtitle, secondary: secondary)
         }
         .background(Color.risoPaper)
     }
 
-    func testLessonCompleteLight() { snap(completeCard("Create a task · both tasks are in your library"), height: 420) }
-    func testLessonCompleteDark() { snap(completeCard("Complete a board · a Bingo and a Greenlog"), height: 420, dark: true) }
+    func testLessonCompleteWithSecondaryLight() {
+        snap(completeCard("Stretch 5 min and Read 20 pages are in your library.", secondary: .tasks), height: 420)
+    }
+
+    func testLessonCompleteNoSecondaryDark() {
+        snap(completeCard("A Bingo and a Greenlog on the sample board. Nothing was saved.", secondary: nil), height: 420, dark: true)
+    }
 
     func testBingoToastLight() {
         snap(TutorialBingoToast().padding(20).background(Color.risoPaper), height: 100)
     }
 
-    func testLeaveSheetLight() { snap(TutorialLeaveSheet(), height: 360) }
+    // MARK: - Tutorial bar
 
-    // MARK: - Coach mark (handoff 03)
+    private func bar(step: Int, total: Int, label: String) -> some View {
+        VStack(spacing: 0) {
+            TutorialBar(label: label, step: step, stepCount: total)
+            Color.risoPaper
+        }
+    }
+
+    func testBarStep1Of7Light() { snap(bar(step: 0, total: 7, label: "Lesson 1 · Create a task"), height: 80) }
+    func testBarStep8Of12Dark() { snap(bar(step: 7, total: 12, label: "Lesson 3 · Complete a board"), height: 80, dark: true) }
+
+    // MARK: - Coach mark (compact)
 
     private func markView(_ mark: TutorialCoachMark) -> some View {
         mark.padding(20).background(Color.risoPaper)
     }
 
-    func testCoachMarkActionLight() {
-        snap(markView(TutorialCoachMark(
-            lessonTitle: "Create a task", text: "Type a task, then tap Add.", step: 1, stepCount: 5, notch: .up
-        )), height: 170)
+    func testCoachMarkCompactLight() {
+        snap(markView(TutorialCoachMark(text: "Tap + to add a task.", notch: .up, notchOffset: 318)), height: 110)
     }
 
-    func testCoachMarkActionDark() {
-        snap(markView(TutorialCoachMark(
-            lessonTitle: "Create a task", text: "Type a task, then tap Add.", step: 1, stepCount: 5, notch: .up
-        )), height: 170, dark: true)
+    func testCoachMarkCompactDark() {
+        snap(markView(TutorialCoachMark(text: "Tap + to add a task.", notch: .up, notchOffset: 318)), height: 110, dark: true)
     }
 
-    func testCoachMarkReadOnlyNextResumedNotchDownLight() {
-        snap(markView(TutorialCoachMark(
-            lessonTitle: "Complete a board", text: "Tapped by mistake? Undo lives here for a moment.",
-            step: 3, stepCount: 10, resumed: true, showsNext: true, notch: .down, notchOffset: 200
-        )), height: 170)
+    func testCoachMarkNextNotchDownLight() {
+        snap(markView(TutorialCoachMark(text: "Tapped by mistake? Undo lives here for a moment.", showsNext: true, notch: .down, notchOffset: 200)), height: 110)
     }
 
-    func testCoachMarkDoneLineLight() {
-        snap(markView(TutorialCoachMark(
-            lessonTitle: "Create a board", text: "Fitness fills eight squares.",
-            step: 4, stepCount: 12, showsNext: true, done: true, notch: .none
-        )), height: 170)
+    func testCoachMarkResumedNoNotchLight() {
+        snap(markView(TutorialCoachMark(text: "Tap to make a Counting task.", resumed: true, notch: .none)), height: 110)
     }
 
-    func testCoachMarkLongTitleAndTextDark() {
-        snap(markView(TutorialCoachMark(
-            lessonTitle: "Complete a board and finish the whole tutorial lesson",
-            text: "Action, then goal, then unit. The title fills itself in.", step: 3, stepCount: 5, notch: .up
-        )), height: 190, dark: true)
+    func testCoachMarkLongTextDark() {
+        snap(markView(TutorialCoachMark(text: "One short. Type a task of your own, then tap Add.", notch: .up)), height: 130, dark: true)
     }
 
-    // MARK: - Scrim + spotlight over a real control (handoff 03)
+    // MARK: - Lesson 1 facsimiles, under the stage's spotlight
 
-    /// The real coach layer over a mock screen: the real gold "+" button is lit
-    /// by a hole in the scrim, ringed in gold, with the mark below.
-    private func walkthroughOverScreen(step: Int, resumed: Bool = false) -> some View {
+    /// Lesson 1 at `step` with the state the steps before it imply (plus
+    /// `tweak`), under the real scrim + ring + coach mark.
+    private func lesson1(step: Int, resumed: Bool = false, tweak: (inout TutorialCreateTaskState) -> Void = { _ in }) -> some View {
+        var state = TutorialCreateTaskState.implied(step: step, typed: [
+            TutorialField.quickAdd.rawValue: "Stretch 5 min", TutorialField.verb.rawValue: "Read",
+            TutorialField.goal.rawValue: "20", TutorialField.unit.rawValue: "pages",
+        ])
+        tweak(&state)
         let coach = TutorialCoordinator.preview(
-            session: TutorialSession(lesson: .createTask, step: step, resumed: resumed)
+            session: TutorialSession(lesson: .createTask, step: step, resumed: resumed, state: .createTask(state))
         )
-        return ZStack(alignment: .topLeading) {
-            RisoPaperBackground()
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Your library").risoKicker()
-                        Text("Tasks").risoH1()
-                    }
-                    Spacer()
-                    RisoIconButton(systemImage: "plus") {}
-                        .tutorialAnchor(.tasksPlus)
-                }
-                Text("Run 5k").font(.risoBody(15, .semibold)).padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading).risoCard()
-            }
-            .padding(20)
+        return VStack(spacing: 0) {
+            TutorialBar(label: "Lesson 1 · Create a task", step: step, stepCount: 7)
+            TutorialCreateTaskLesson(state: state, step: step, perform: { _ in })
+                .tutorialSpotlight(coach: coach)
+                .clipped()
         }
-        .tutorialCoachLayer(isRoot: true)
-        .environment(\.tutorialCoach, coach)
+        .background(Color.risoPaper)
     }
 
-    func testWalkthroughOverScreenLight() { snap(walkthroughOverScreen(step: 0), height: 420) }
-    func testWalkthroughOverScreenResumedDark() { snap(walkthroughOverScreen(step: 0, resumed: true), height: 420, dark: true) }
+    func testLesson1Step1TasksPlusLight() { snap(lesson1(step: 0), height: 760) }
+    func testLesson1Step1TasksPlusDark() { snap(lesson1(step: 0), height: 760, dark: true) }
+    func testLesson1Step2QuickAddTypedLight() { snap(lesson1(step: 1) { $0.quickText = "Stretch 5 min" }, height: 760) }
+    func testLesson1Step3SpecialResumedLight() { snap(lesson1(step: 2, resumed: true), height: 760) }
+    func testLesson1Step4VerbLight() { snap(lesson1(step: 3), height: 760) }
+    func testLesson1Step5GoalDark() { snap(lesson1(step: 4), height: 760, dark: true) }
+    func testLesson1Step6UnitTitleLight() { snap(lesson1(step: 5) { $0.unit = "pages" }, height: 760) }
+    func testLesson1Step7AddToLibraryLight() { snap(lesson1(step: 6), height: 760) }
 
-    // MARK: - Tutorial Greenlog (handoff 2.6)
+    /// The Tasks facsimile after both writes (what the complete card sits over).
+    func testLesson1TasksListAfterWritesLight() {
+        var state = TutorialCreateTaskState.implied(step: 6, typed: [TutorialField.quickAdd.rawValue: "Stretch 5 min"])
+        state.verb = "Read"; state.goal = "20"; state.unit = "pages"
+        state.countingTitle = "Read 20 pages"
+        state.sheetOpen = false
+        snap(TutorialTasksFacsimile(state: state, step: 6, perform: { _ in }), height: 760)
+    }
+
+    // MARK: - Tutorial Greenlog
 
     func testTutorialGreenlogLight() {
         let m = MomentPresentation.tutorialGreenlog
