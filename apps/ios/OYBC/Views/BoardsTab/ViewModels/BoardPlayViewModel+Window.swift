@@ -103,6 +103,10 @@ extension BoardPlayViewModel {
         let placement = boardTasks.first { $0.taskId == task.id }
         switch task.type {
         case .compound:
+            // A compound staged in Edit (a type switch, a picker-born add) has no
+            // persisted children yet; AND over none is vacuously true, which
+            // would paint it done before Save. No children, not done.
+            guard !(compoundChildrenByCompound[task.id] ?? []).isEmpty else { return false }
             return CompoundEvaluation.evaluate(
                 compound: task, childrenByCompound: compoundChildrenByCompound, taskById: taskMap,
                 windowContext: compoundWindowContext, childTargets: placement?.childTargets

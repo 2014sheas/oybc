@@ -2030,6 +2030,26 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(vm.windowedIsCompleted(for: liveCompound), vm.buildPlacementRender(placement).isCompleted)
     }
 
+    /// A compound with no persisted children — the shape a square staged as a
+    /// compound in Edit has before Save (type switch, picker-born add) — never
+    /// previews done, even though AND over zero children is vacuously true.
+    func test_windowedIsCompleted_compoundWithNoChildren_isNotDone() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var compound = makeTask("comp")
+        compound.type = .compound
+        compound.operatorType = .and
+        try db.saveTask(compound)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-comp", boardId: "b1", taskId: "comp", row: 1, col: 1))
+
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && vm.allTasks.contains { $0.id == "comp" } })
+
+        XCTAssertFalse(vm.windowedIsCompleted(for: try XCTUnwrap(vm.taskMap["comp"])), "no children, not done")
+    }
+
     // MARK: - Item 3 (Board-integrity PR-4): single-transaction Save atomicity
 
     /// Board-integrity PR-4 (Item 3, docs/BOARD_INTEGRITY.md): `handleEditSave`
