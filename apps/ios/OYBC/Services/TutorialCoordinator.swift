@@ -3,7 +3,8 @@ import SwiftUI
 
 // MARK: - Session
 
-/// A running lesson: where the user is in the script and what the lesson owns.
+/// A running lesson: where the person is in the script and the fixture state
+/// its facsimiles show.
 struct TutorialSession: Equatable {
     /// What the stage is showing on top of the lesson.
     enum Phase: Equatable {
@@ -21,88 +22,31 @@ struct TutorialSession: Equatable {
     /// The lesson reopened mid-way — the first coach mark carries the RESUMED tag.
     var resumed: Bool
     var phase: Phase = .running
-    /// A Bingo / Greenlog moment is on screen — the coach layer steps aside.
-    var momentOpen: Bool = false
-    /// The current step's action happened; the lesson holds on its done line
-    /// (every hole closed) until Next lights the next control.
-    var awaitingNext: Bool = false
-    /// Lesson 3: what the last log produced ("22 of 20"), for the step copy.
-    var logSummary: String?
-    /// Lesson 3: whether that log finished the square.
-    var logFinishedSquare: Bool = false
-    /// Lesson 2: the picked pool's line ("Fitness fills eight squares").
-    var poolSummary: String?
-    /// The sandbox's sample board id (lesson 3).
-    var sampleBoardId: String?
-    /// Lesson 3: row-major slots of the squares not yet complete, reported by the
-    /// play board; the finale lights every one of them.
-    var incompleteSlots: [Int]?
-    /// Lesson 3: where each Sample week title sits right now, reported by the
-    /// play board (Edit lets the person drag squares around).
-    var slotByTitle: [String: Int]?
+    var state: TutorialStageState
+    /// Where the stage lands once the complete phase ends (set by the Greenlog's
+    /// "Start a new board" and the complete card's plain link).
+    var exit: TutorialExit = .board
 
-    /// The lesson's script.
-    var steps: [TutorialStep] { TutorialCatalog.info(for: lesson).steps }
-
-    /// The current step (nil once past the end).
+    var info: TutorialLessonInfo { TutorialCatalog.info(for: lesson) }
+    var steps: [TutorialStep] { info.steps }
     var currentStep: TutorialStep? { steps.indices.contains(step) ? steps[step] : nil }
 
-    /// The step whose screen is up: the next one while the lesson waits for
-    /// Next (its sheet may already be presented), else the current one.
-    var screenStep: TutorialStep? {
-        let index = awaitingNext ? step + 1 : step
-        return steps.indices.contains(index) ? steps[index] : nil
-    }
+    /// The controls lit right now.
+    var spots: [TutorialSpot] { phase == .running ? state.spots(step: step) : [] }
 
-    /// The controls the current step lights: its anchors (a `.square` resolved
-    /// to where its title sits now), or (finale) every still-incomplete square.
-    /// Nothing while the lesson waits for Next.
-    var litAnchors: [TutorialAnchorID] {
-        guard !awaitingNext, let step = currentStep else { return [] }
-        if step.litsIncompleteSquares, let slots = incompleteSlots, !slots.isEmpty {
-            return slots.map { .square($0) }
-        }
-        return step.anchors.map { anchor in
-            guard case .square(let seeded) = anchor, let slots = slotByTitle,
-                  let title = TutorialCatalog.sampleTitle(atSeededSlot: seeded), let now = slots[title] else { return anchor }
-            return .square(now)
-        }
-    }
-}
+    /// The coach mark's line.
+    var text: String { state.textOverride(step: step) ?? currentStep?.text ?? "" }
 
-/// The value-typed slice of coordinator state that real screens read from the
-/// environment to react to (e.g. a sheet closing when the lesson completes).
-struct TutorialSignals: Equatable {
-    var active: Bool = false
-    var step: Int = 0
-    var phase: TutorialSession.Phase = .running
-    /// The lesson runs on a throwaway sandbox database: everything the lesson
-    /// does not teach is dimmed and inert.
-    var sandboxed: Bool = false
-    /// The current step wants the square sheet closed (lesson 3, hold-menu step).
-    var closesSquareSheet: Bool = false
-    /// The current step points at the Undo toast — keep it up until Next.
-    var holdsToast: Bool = false
-    /// What a play-board square accepts right now (lesson 3): the one gesture
-    /// the step teaches, nothing while the lesson waits for Next.
-    var squareInteraction: TutorialSquareInteraction = .free
-    /// A Bingo / Greenlog moment is on screen (a sheet over it closes).
-    var momentOpen: Bool = false
-
-    /// No lesson running.
-    static let inactive = TutorialSignals()
-    var isCompleting: Bool { active && phase == .complete }
+    /// Whether the coach mark shows Next (read-only step).
+    var showsNext: Bool { currentStep?.advance == .next }
 }
 
 // MARK: - Coordinator
 
-/// Runs the Getting Started tutorial: owns the synced progress, the active
-/// lesson's step machine and (for lessons 2-3) the throwaway sandbox database.
-///
-/// Real screens never import this — they carry `.tutorialAnchor(_:)` tags and
-/// call `tutorialCoach?.handle(_:)` at the actions a step waits for, both inert
-/// when no lesson runs. Lesson 1 writes real tasks to the user's library;
-/// lessons 2-3 run against `TutorialSandbox.database` and write nothing real.
+/// Runs the Getting Started tutorial: owns the synced progress and the active
+/// lesson's step machine. The facsimiles report events through `perform(_:)`;
+/// the lesson state decides what they mean. Lesson 1's two adds are the only
+/// real writes, through the injected database.
 @MainActor
 final class TutorialCoordinator: ObservableObject {
 
@@ -110,29 +54,23 @@ final class TutorialCoordinator: ObservableObject {
     @Published private(set) var progress: TutorialProgress
     /// The running lesson, if any.
     @Published private(set) var session: TutorialSession?
-    /// The sandbox of the running lesson (lessons 2-3), else nil.
-    private(set) var sandbox: TutorialSandbox?
-    /// The sandbox database, injected into the lesson's screens.
-    var sandboxDatabase: AppDatabase? { sandbox?.database }
-    /// The lesson that just finished, until the tutorial board plays its pop.
-    @Published private(set) var justCompleted: TutorialLessonID?
+    /// The lesson that just finished (and where it exits), until the tutorial
+    /// board plays its pop.
+    @Published private(set) var justCompleted: (lesson: TutorialLessonID, exit: TutorialExit)?
 
-    /// The lesson is closing: the stage cover is animating out. The session and
-    /// sandbox stay alive until `stageDidDismiss()` so nothing flashes or falls
-    /// back to the real database mid-animation.
+    /// The lesson is closing: the stage cover is animating out. The session
+    /// stays alive until `stageDidDismiss()` so nothing flashes mid-animation.
     @Published private(set) var isClosing = false
-
-    /// How many sheet-level coach layers are on screen — the root layer only
-    /// dims (and shows no fallback mark) while one of them owns the step.
-    @Published private(set) var sheetLayerCount = 0
 
     private let database: AppDatabase
     private let userId: String?
     private let persists: Bool
+    /// The device-local resume cache, scoped to this user (inert for a preview).
+    private var typedCache: TutorialTypedCache { TutorialTypedCache(userId: userId) }
 
     /// - Parameters:
     ///   - userId: The signed-in user; nil makes a preview coordinator.
-    ///   - database: The user's real database (progress is written here).
+    ///   - database: The user's real database (progress and lesson 1's tasks are written here).
     ///   - progress: Initial progress (from the user's preferences).
     init(userId: String?, database: AppDatabase = .shared, progress: TutorialProgress = .empty) {
         self.userId = userId
@@ -146,52 +84,6 @@ final class TutorialCoordinator: ObservableObject {
         let coordinator = TutorialCoordinator(userId: nil, progress: progress)
         coordinator.session = session
         return coordinator
-    }
-
-    // MARK: Derived
-
-    /// What real screens observe through the environment.
-    var signals: TutorialSignals {
-        guard let session else { return .inactive }
-        let step = session.currentStep
-        return TutorialSignals(
-            active: true, step: session.step, phase: session.phase, sandboxed: sandbox != nil,
-            closesSquareSheet: step?.closesSquareSheet ?? false, holdsToast: step?.holdsToast ?? false,
-            squareInteraction: session.awaitingNext ? .none : (step?.squareInteraction ?? .none),
-            momentOpen: session.momentOpen
-        )
-    }
-
-    /// The coach mark's line: the step's instruction, or its done line while
-    /// the lesson waits for Next — either with what the user just did folded in.
-    var currentText: String? {
-        guard let session, let step = session.currentStep else { return nil }
-        if session.awaitingNext {
-            let fallback = step.doneText ?? step.text
-            return dynamicText(step.doneDynamic, session: session, fallback: fallback)
-        }
-        return dynamicText(step.dynamic, session: session, fallback: step.text)
-    }
-
-    private func dynamicText(_ dynamic: TutorialStep.DynamicText?, session: TutorialSession, fallback: String) -> String {
-        switch dynamic {
-        case .loggedSummary:
-            guard let summary = session.logSummary else { return fallback }
-            return session.logFinishedSquare
-                ? "\(summary). The square is done; Undo stays here."
-                : "\(summary). Undo stays here."
-        case .poolFills:
-            return session.poolSummary.map { "\($0)." } ?? fallback
-        case .remainingSquares:
-            guard let left = session.incompleteSlots?.count, left > 0 else { return fallback }
-            let word = BoardWizardTasksStepView.spelledCount(left)
-            let head = word.prefix(1).uppercased() + word.dropFirst()
-            return left == 1
-                ? "\(head) left. Tap it to complete it."
-                : "\(head) left. Tap each to complete it."
-        case nil:
-            return fallback
-        }
     }
 
     // MARK: Progress
@@ -248,182 +140,82 @@ final class TutorialCoordinator: ObservableObject {
     func reset() {
         tearDown()
         justCompleted = nil
+        for lesson in TutorialLessonID.middleRow { typedCache.clear(lesson) }
         persist(.empty)
     }
 
     // MARK: Lesson lifecycle
 
-    /// Opens a lesson: builds its sandbox (lessons 2-3), resumes at the saved
-    /// step (or step 1 for a fresh / replayed one).
-    /// - Returns: false when the sandbox could not be built or the lesson is Pro.
+    /// Opens a lesson at its saved step (or step 1 for a fresh / replayed one),
+    /// rebuilding the fixture the steps before it imply.
+    /// - Returns: false for a Pro square or while another lesson runs.
     @discardableResult
-    func start(_ lesson: TutorialLessonID, user: User? = nil) -> Bool {
+    func start(_ lesson: TutorialLessonID) -> Bool {
         guard lesson.isFree, session == nil else { return false }
+        let count = TutorialCatalog.info(for: lesson).steps.count
         var saved = 0
         if case .inProgress(let savedStep) = progress.state(of: lesson) {
-            saved = min(savedStep, max(TutorialCatalog.info(for: lesson).steps.count - 1, 0))
+            saved = min(savedStep, max(count - 1, 0))
         }
-        var sandboxForLesson: TutorialSandbox?
-        if lesson == .createBoard || lesson == .completeBoard {
-            guard let user = user ?? currentUserRow() else { return false }
-            do {
-                // Lesson 3 reseeds to the state its saved step implies.
-                sandboxForLesson = try AppDatabase.seedTutorialSandbox(lesson: lesson, user: user, resumeStep: saved)
-            } catch {
-                dlog("⚠️ TutorialCoordinator: sandbox seeding failed: \(error)")
-                return false
-            }
-        }
-        sandbox = sandboxForLesson
+        if saved == 0 { typedCache.clear(lesson) }
+        guard let state = TutorialStageState.implied(lesson: lesson, step: saved, typed: typedCache.load(lesson)) else { return false }
         isClosing = false
-        session = TutorialSession(
-            lesson: lesson, step: TutorialCatalog.resumeStep(lesson: lesson, saved: saved),
-            resumed: saved > 0, sampleBoardId: sandboxForLesson?.sampleBoardId
-        )
+        session = TutorialSession(lesson: lesson, step: saved, resumed: saved > 0, state: state)
         return true
     }
 
-    /// The signed-in user's row from the real database (the sandbox gets a copy);
-    /// nil for a preview coordinator or when the row is missing.
-    private func currentUserRow() -> User? {
-        guard let userId else { return nil }
-        return try? database.fetchUser(id: userId)
-    }
-
-    /// An action step's event from a real control. When it is the one the
-    /// current step waits for, the lesson holds on the step's done line until
-    /// Next (or moves straight on when the step has none: the next step is
-    /// read-only, or the lesson completes). No other event moves the lesson
-    /// forward — a step is never skipped — and a lit sheet closing early
-    /// steps back to the control that reopens it.
-    func handle(_ event: TutorialEvent) {
+    /// A facsimile's event: the lesson state applies it and the step moves (or
+    /// not). Lesson 1's writes happen here, before the step moves.
+    func perform(_ event: TutorialEvent) {
         guard var current = session, current.phase == .running, !isClosing else { return }
-        // A moment closing always un-hides the coach layer, whatever the step.
-        if event == .bingoMomentClosed || event == .greenlogMomentClosed {
-            current.momentOpen = false
-            session = current
-        }
-        guard let step = current.currentStep else { return }
-        if current.awaitingNext {
-            // Every hole is closed; only a retreat for the step about to light
-            // (its sheet handed off before Next) means anything.
-            if let back = TutorialCatalog.retreat(lesson: current.lesson, step: current.step + 1, event: event) {
-                retreat(to: back)
-            }
+        let outcome = current.state.apply(event, step: current.step)
+        switch outcome {
+        case .ignored:
             return
-        }
-        if step.advance == .action(event) {
-            if step.doneText != nil, current.step + 1 < current.steps.count {
-                current.awaitingNext = true
-                current.resumed = false
-                session = current
-                recordStep(current.lesson, step: current.step + 1)
-            } else {
-                advance()
-            }
-        } else if let back = TutorialCatalog.retreat(lesson: current.lesson, step: current.step, event: event) {
-            retreat(to: back)
-        }
-    }
-
-    /// Steps back to `step` (the control that reopens a dismissed sheet).
-    private func retreat(to step: Int) {
-        guard var current = session else { return }
-        current.step = step
-        current.awaitingNext = false
-        current.resumed = false
-        session = current
-        recordStep(current.lesson, step: step)
-    }
-
-    /// The coach mark's Next: lights the next control after a done line, or
-    /// advances a read-only step.
-    func next() {
-        guard var current = session, current.phase == .running, !isClosing else { return }
-        if current.awaitingNext {
-            current.awaitingNext = false
+        case .stayed:
             session = current
-            advance()
-            return
-        }
-        guard current.currentStep?.advance == .next else { return }
-        advance()
-    }
-
-    /// Moves to the next step. Past the last step the lesson completes and is
-    /// saved as done; otherwise the new place is saved so "Your place is saved"
-    /// holds even if the app is killed (`recordStep` never lowers or rewrites a
-    /// finished lesson).
-    private func advance() {
-        guard var current = session else { return }
-        current.step += 1
-        current.resumed = false
-        if current.step >= current.steps.count {
-            current.phase = .complete
-            session = current
-            var next = progress
-            next.set(current.lesson, .done)
-            if next != progress { persist(next) }
-        } else {
+        case .advanced:
+            current.resumed = false
+            current.step += 1
             session = current
             recordStep(current.lesson, step: current.step)
+        case .completed(let exit):
+            complete(current, exit: exit)
+        case .writes(let write):
+            guard write.perform(database: database, userId: userId) else { return }
+            // Lesson 1's last add completes the lesson; the first moves on.
+            if current.step + 1 >= current.steps.count {
+                complete(current, exit: nil)
+            } else {
+                current.resumed = false
+                current.step += 1
+                session = current
+                recordStep(current.lesson, step: current.step)
+            }
         }
+        if let session, session.phase == .running { typedCache.save(session.lesson, session.state.typed) }
     }
 
-    /// Whether the current step is read-only (shows Next).
-    var currentStepIsReadOnly: Bool { session?.currentStep?.advance == .next }
+    /// The coach mark's Next (read-only steps).
+    func next() { perform(.nextTapped) }
 
-    /// Whether the coach mark shows Next: a read-only step, or a done line.
-    var showsNext: Bool { (session?.awaitingNext ?? false) || currentStepIsReadOnly }
-
-    /// A sheet-level coach layer appeared.
-    func sheetLayerAppeared() { sheetLayerCount += 1 }
-
-    /// A sheet-level coach layer went away.
-    func sheetLayerDisappeared() { sheetLayerCount = max(0, sheetLayerCount - 1) }
-
-    // MARK: Step context from real controls
-
-    /// A Bingo / Greenlog moment opened or closed over the lesson.
-    func setMomentOpen(_ open: Bool) {
-        guard var current = session, current.momentOpen != open else { return }
-        current.momentOpen = open
-        session = current
-    }
-
-    /// Lesson 3: a count log's outcome, for the next step's copy.
-    func reportLog(summary: String, finishedSquare: Bool) {
-        guard var current = session else { return }
-        current.logSummary = summary
-        current.logFinishedSquare = finishedSquare
-        session = current
-    }
-
-    /// Lesson 3: the slots of the squares not yet complete (finale lights them all).
-    func reportIncomplete(slots: [Int]) {
-        guard var current = session, current.incompleteSlots != slots else { return }
-        current.incompleteSlots = slots
-        session = current
-    }
-
-    /// Lesson 3: where each placed title sits now, so a `.square` anchor follows
-    /// its square after an Edit move.
-    func reportSlots(byTitle slots: [String: Int]) {
-        guard var current = session, current.slotByTitle != slots else { return }
-        current.slotByTitle = slots
-        session = current
-    }
-
-    /// Lesson 2: the pulled pool's line for the "Tap Next" step.
-    func reportPool(summary: String) {
-        guard var current = session else { return }
-        current.poolSummary = summary
-        session = current
+    /// Records the lesson done and shows the complete card — or, with an exit,
+    /// closes the stage straight to that tab (the Greenlog's "Start a new board").
+    private func complete(_ current: TutorialSession, exit: TutorialExit?) {
+        var ending = current
+        ending.phase = .complete
+        ending.exit = exit ?? .board
+        session = ending
+        var next = progress
+        next.set(current.lesson, .done)
+        if next != progress { persist(next) }
+        typedCache.clear(current.lesson)
+        if exit != nil { finishCompletedLesson(exit: exit ?? .board) }
     }
 
     // MARK: Leaving
 
-    /// The coach mark's ✕: asks before leaving.
+    /// The bar's ✕: asks before leaving.
     func requestLeave() {
         guard var current = session, current.phase == .running else { return }
         current.phase = .confirmingLeave
@@ -438,21 +230,22 @@ final class TutorialCoordinator: ObservableObject {
     }
 
     /// "Leave": saves the step (never lowering it, never touching a finished
-    /// lesson) and closes the stage. The session and sandbox stay alive until
-    /// `stageDidDismiss()`.
+    /// lesson), keeps what was typed for the resume, and closes the stage.
     func leave() {
         guard let current = session else { return }
         recordStep(current.lesson, step: current.step)
+        typedCache.save(current.lesson, current.state.typed)
         var ending = current
         ending.phase = .running
         session = ending
         isClosing = true
     }
 
-    /// "Back to the board" on the lesson-complete card.
-    func finishCompletedLesson() {
+    /// The complete card's buttons (and a moment's exit): closes the stage and
+    /// tells the tutorial board where to land.
+    func finishCompletedLesson(exit: TutorialExit = .board) {
         guard let current = session, current.phase == .complete else { return }
-        justCompleted = current.lesson
+        justCompleted = (current.lesson, exit)
         isClosing = true
     }
 
@@ -462,55 +255,85 @@ final class TutorialCoordinator: ObservableObject {
     }
 
     /// The stage cover finished dismissing (any way it was dismissed). A lesson
-    /// still running is left first so its place is saved, then the session,
-    /// sandbox and its throwaway defaults are torn down.
+    /// still running is left first so its place is saved, then the session is
+    /// torn down.
     func stageDidDismiss() {
         if session != nil, !isClosing { leave() }
         tearDown()
     }
 
-    /// Drops the session and sandbox and clears the sandbox boards' throwaway
-    /// last-seen snapshots. Runs only after the cover is gone, so no view ever
-    /// reads a missing sandbox (or falls back to the real database) mid-animation.
     private func tearDown() {
         session = nil
-        sandbox = nil
         isClosing = false
-        UserDefaults(suiteName: CounterArrivalStore.tutorialSuiteName)?
-            .removePersistentDomain(forName: CounterArrivalStore.tutorialSuiteName)
     }
 }
 
-// MARK: - Environment
+// MARK: - Lesson 1 writes
 
-private struct TutorialCoachKey: EnvironmentKey {
-    static let defaultValue: TutorialCoordinator? = nil
+extension TutorialWrite {
+    /// Writes the task to the real library, the way the Tasks tab's quick add
+    /// and special-type panel do (`createTaskAndEnqueue`: one row + one sync
+    /// item). A preview coordinator (no user) writes nothing and reports success.
+    /// - Returns: false when the write failed (the lesson stays on its step).
+    @MainActor
+    func perform(database: AppDatabase, userId: String?) -> Bool {
+        guard let userId else { return true }
+        let now = AppDatabase.currentTimestamp()
+        let task: Task
+        switch self {
+        case .simple(let title):
+            task = Task(
+                id: AppDatabase.generateUUID(), userId: userId, title: title, type: .normal,
+                totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false
+            )
+        case .counting(let verb, let goal, let unit):
+            let title = TaskTitle.generateCounterTaskTitle(action: verb, maxCount: CountValue(goal), unit: unit, countKind: .discrete)
+            task = Task(
+                id: AppDatabase.generateUUID(), userId: userId, title: title, type: .counting,
+                action: verb, unit: unit, maxCount: CountValue(goal),
+                totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now, version: 1, isDeleted: false
+            )
+        }
+        do {
+            try database.createTaskAndEnqueue(task, now: now)
+            return true
+        } catch {
+            dlog("⚠️ TutorialCoordinator: lesson 1 write failed: \(error)")
+            return false
+        }
+    }
 }
 
-private struct TutorialSignalsKey: EnvironmentKey {
-    static let defaultValue: TutorialSignals = .inactive
-}
+// MARK: - Typed cache
 
-extension EnvironmentValues {
-    /// The running tutorial's coordinator; nil outside a lesson, so every hook
-    /// in a production view is inert by default.
-    var tutorialCoach: TutorialCoordinator? {
-        get { self[TutorialCoachKey.self] }
-        set { self[TutorialCoachKey.self] = newValue }
+/// What the person typed in a lesson, kept device-locally per user so a resume
+/// rebuilds the facsimile with their own words ("Resume restores … task
+/// typed"). Not progress — that syncs in `TutorialProgress`. A preview
+/// coordinator (no user) has no cache.
+struct TutorialTypedCache {
+    let userId: String?
+    var defaults: UserDefaults = .standard
+
+    private func key(_ lesson: TutorialLessonID) -> String? {
+        userId.map { "oybc.tutorial.typed.\($0).\(lesson.rawValue)" }
     }
 
-    /// Value-typed lesson state for views that react to it.
-    var tutorialSignals: TutorialSignals {
-        get { self[TutorialSignalsKey.self] }
-        set { self[TutorialSignalsKey.self] = newValue }
+    func load(_ lesson: TutorialLessonID) -> [String: String] {
+        guard let key = key(lesson) else { return [:] }
+        return defaults.dictionary(forKey: key) as? [String: String] ?? [:]
     }
-}
 
-extension View {
-    /// Dims and disables a control that the running lesson does not teach (it
-    /// stays visible so the screen still reads like the real one).
-    /// - Parameter active: true while a sandbox lesson runs.
-    func tutorialDimmed(_ active: Bool) -> some View {
-        opacity(active ? 0.45 : 1).allowsHitTesting(!active)
+    func save(_ lesson: TutorialLessonID, _ typed: [String: String]) {
+        guard let key = key(lesson) else { return }
+        if typed.isEmpty {
+            defaults.removeObject(forKey: key)
+        } else {
+            defaults.set(typed, forKey: key)
+        }
+    }
+
+    func clear(_ lesson: TutorialLessonID) {
+        guard let key = key(lesson) else { return }
+        defaults.removeObject(forKey: key)
     }
 }

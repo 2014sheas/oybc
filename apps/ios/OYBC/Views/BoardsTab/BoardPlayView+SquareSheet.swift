@@ -27,7 +27,6 @@ extension BoardPlayView {
             toggleNormalSquare(boardTask: boardTask, task: task)
         } else {
             squareSheetBoardTaskId = boardTask.id
-            if task?.type == .counting { tutorialCoach?.handle(.countingSheetOpened) }
         }
     }
 
@@ -46,7 +45,6 @@ extension BoardPlayView {
                 detail: board?.displayName ?? "", retoggle: boardTask, wasDone: wasDone
             )
         }
-        if !wasDone { tutorialCoach?.handle(.simpleSquareDone) }
     }
 
     // MARK: Toast
@@ -109,12 +107,6 @@ extension BoardPlayView {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color.risoPaper)
                 .presentationCornerRadius(12)
-                .tutorialCoachLayer()
-                // While the lesson lights the sheet it closes only through the
-                // lesson; a sheet opened from a lit square (the finale's Read)
-                // keeps its swipe-down, since nothing on it is scripted.
-                .interactiveDismissDisabled(tutorialCoach?.session?.screenStep?.onSheet == true)
-                .modifier(TutorialSheetCloser())
         }
     }
 
@@ -123,7 +115,6 @@ extension BoardPlayView {
     func drainSquareSheetHandOffs() {
         squareLogStrip = nil
         squareSheetEntry = nil
-        tutorialCoach?.handle(.squareSheetClosed) // a lesson lighting the sheet steps back
         if let id = pendingTaskDetailTaskId {
             pendingTaskDetailTaskId = nil
             taskDetailSheetTaskId = TaskIdItem(id: id)
@@ -181,7 +172,6 @@ extension BoardPlayView {
                 guard let strip = squareLogStrip else { return }
                 squareLogStrip = nil
                 viewModel.undoSquareLog(strip.undo)
-                tutorialCoach?.handle(.squareLogUndone) // a lesson lighting the strip steps back to the chips
             },
             onToggleChild: { id in
                 guard let placement = currentSquareSheetPlacement else { return }
@@ -215,43 +205,6 @@ extension BoardPlayView {
     private func squareSheetLog(taskId: String, amount: CountValue, persistAsDefault: Bool, removing: Bool) {
         guard let bt = currentSquareSheetPlacement else { return }
         squareLogStrip = nil // any new write invalidates the previous strip
-        let before = tutorialCoach == nil || removing || taskId != bt.taskId ? nil : viewModel.placedTask(bt).map(viewModel.squareCountState)
         squareLogStrip = viewModel.performSquareLog(placement: bt, taskId: taskId, amount: amount, persistAsDefault: persistAsDefault, removing: removing)
-        if squareLogStrip != nil, let before { reportTutorialLog(before: before, amount: amount) }
-    }
-
-    /// Getting Started: tells the lesson what the log produced ("22 of 20", or
-    /// "13 of 20" when the chip did not finish the square) and that a chip was
-    /// used — any chip moves the lesson on, as the handoff scripts it; a square
-    /// left short is lit again by the finale. Inert outside a lesson.
-    private func reportTutorialLog(before: SquareSheetContent.ChildCount, amount: CountValue) {
-        guard let coach = tutorialCoach else { return }
-        let after = before.current + amount
-        coach.reportLog(
-            summary: "\(formatCount(after, kind: before.kind)) of \(formatCount(before.goal, kind: before.kind))",
-            finishedSquare: before.goal > 0 && after >= before.goal
-        )
-        coach.handle(.countLogged)
-    }
-}
-
-// MARK: - Getting Started hooks
-
-/// Closes the square sheet when the running lesson's step asks for it (the
-/// lesson-3 hold-menu step follows the sheet's Undo-strip step) or when a
-/// Bingo / Greenlog moment opens behind it (a finale log from the sheet).
-/// Inert outside a lesson.
-struct TutorialSheetCloser: ViewModifier {
-    @Environment(\.tutorialSignals) private var signals
-    @Environment(\.dismiss) private var dismiss
-
-    func body(content: Content) -> some View {
-        content
-            .onChange(of: signals.closesSquareSheet) { _, closes in
-                if closes { dismiss() }
-            }
-            .onChange(of: signals.momentOpen) { _, open in
-                if open { dismiss() }
-            }
     }
 }

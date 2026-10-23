@@ -71,7 +71,6 @@ extension BoardPlayView {
                     // it stays view-side, so reset it here.
                     editSaving = false
                     withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
-                    tutorialCoach?.handle(.editEntered)
                 }
             )
         }

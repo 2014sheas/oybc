@@ -60,14 +60,11 @@ struct CreateHubView: View {
     /// templateId, navigating to a non-existent board.
     var onTemplateCompleted: ((_ templateId: String) -> Void)? = nil
 
-    /// Injected database (defaults to the app singleton). The Getting Started
-    /// "Create a board" lesson passes its throwaway sandbox so the hub, the
-    /// wizard and every write stay off the user's real store.
+    /// Injected database (defaults to the app singleton) — the hub, the
+    /// wizard and every write go through it.
     var database: AppDatabase = .shared
 
     @State private var vm: CreateHubViewModel
-    @Environment(\.tutorialCoach) private var tutorialCoach
-    @Environment(\.tutorialSignals) private var tutorialSignals
 
     /// Phase 6.1d: pending core boards (daily/weekly/monthly/yearly) that
     /// the user hasn't created yet for the current windows, surfaced via
@@ -176,7 +173,6 @@ struct CreateHubView: View {
             userId: userId,
             preferences: preferences,
             database: database,
-            prefillName: tutorialSignals.sandboxed ? "Sample board" : nil,
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
@@ -241,7 +237,6 @@ struct CreateHubView: View {
                             vm.enterCoreBoardWizard(timeframe: slot.timeframe)
                         }
                     )
-                    .tutorialDimmed(tutorialSignals.sandboxed)
 
                     // Board Creation Split (iOS PR A) — two stacked
                     // full-width CTAs under a "NEW BOARD" section label,
@@ -254,15 +249,11 @@ struct CreateHubView: View {
 
                         CreateHubBoardCTAView(kind: .oneOff) {
                             vm.enterFreshWizard(startRecurring: false)
-                            tutorialCoach?.handle(.oneOffBoardStarted)
                         }
-                        .tutorialAnchor(.startOneOffCTA)
 
                         CreateHubBoardCTAView(kind: .recurring) {
                             vm.enterFreshWizard(startRecurring: true)
                         }
-                        // Recurring boards are a Pro lesson: only the one-off path is lit.
-                        .tutorialDimmed(tutorialSignals.sandboxed)
                     }
 
                     if !vm.drafts.isEmpty {

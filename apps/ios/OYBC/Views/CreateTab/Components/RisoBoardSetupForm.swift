@@ -37,8 +37,6 @@ import SwiftUI
 struct RisoBoardSetupForm: View {
 
     @Bindable var controller: BoardWizardViewModel
-    @Environment(\.tutorialCoach) private var tutorialCoach
-    @Environment(\.tutorialSignals) private var tutorialSignals
 
     // Local state mirrors for custom DatePicker <-> ISO string bridge.
     @State private var customStartAsDate: Date = Date()
@@ -146,12 +144,8 @@ struct RisoBoardSetupForm: View {
                             controller.updateTimeframe(newValue)
                         }
                     }
-                ),
-                // A lesson picks a calendar timeframe; Custom's date fields
-                // would sit under the scrim.
-                lockedValues: tutorialSignals.sandboxed ? [.custom] : []
+                )
             )
-            .tutorialAnchor(.timeframePicker)
 
             // Date region: custom pickers (covers dated + ongoing via the
             // End-date "None" option), or the computed-window note.
@@ -386,13 +380,9 @@ struct RisoBoardSetupForm: View {
             // Board Creation Split (iOS PR A) — extracted to the reusable
             // `RisoBoardSizeCards` component (`Views/Components/`) so it's
             // shared, not re-implemented per surface.
-            // In the Getting Started lesson only 3×3 can be picked: the
-            // supplied pools (9 / 6 / 8 tasks) fill a 3×3, never a 5×5.
-            RisoBoardSizeCards(selectedSize: controller.size, enabledSizes: tutorialSignals.sandboxed ? [3] : nil) { n in
+            RisoBoardSizeCards(selectedSize: controller.size) { n in
                 controller.updateSize(n)
-                tutorialCoach?.handle(.boardSizePicked)
             }
-            .tutorialAnchor(.boardSizeCards)
 
             Text(tasksRequiredValue)
                 .font(.risoBody(12, .regular))

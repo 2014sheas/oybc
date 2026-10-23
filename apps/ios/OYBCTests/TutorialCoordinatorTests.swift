@@ -2,10 +2,11 @@ import XCTest
 import GRDB
 @testable import OYBC
 
-/// The Getting Started step machine: each free lesson's script advances only on
-/// its real control's event, holds on the step's done line until Next (Next
-/// alone on read-only steps), never skips a step, leaving saves the step,
-/// resuming picks it up, and completion is written to the synced preferences.
+/// The Getting Started step machine over the facsimile model: each lesson's
+/// state advances only on its wired control's event, a step is never skipped,
+/// read-only steps take Next alone, leaving saves the step, resuming rebuilds
+/// the state the step implies, lesson 1 writes its two real tasks and
+/// completion lands in the synced preferences.
 @MainActor
 final class TutorialCoordinatorTests: XCTestCase {
 
@@ -20,10 +21,11 @@ final class TutorialCoordinatorTests: XCTestCase {
         )
     }
 
-    /// A coordinator over a fresh "real" test database holding the user row.
+    /// A coordinator over a fresh test database holding the user row.
     private func makeCoordinator(progress: TutorialProgress = .empty) throws -> (TutorialCoordinator, AppDatabase) {
         let real = try AppDatabase.makeTestInstance()
         try real.saveUser(makeUser())
+        for lesson in TutorialLessonID.middleRow { TutorialTypedCache(userId: userId).clear(lesson) }
         return (TutorialCoordinator(userId: userId, database: real, progress: progress), real)
     }
 
@@ -31,595 +33,547 @@ final class TutorialCoordinatorTests: XCTestCase {
         try XCTUnwrap(db.fetchUser(id: userId)).decodedPreferences.tutorialProgress
     }
 
-    /// Does the step's action and, when the lesson holds on its done line,
-    /// taps Next — what the person does at every action step.
-    private func act(_ coach: TutorialCoordinator, _ event: TutorialEvent) {
-        coach.handle(event)
-        if coach.session?.awaitingNext == true { coach.next() }
+    private func ringed(_ coach: TutorialCoordinator) -> [TutorialControlID] {
+        (coach.session?.spots ?? []).filter(\.ringed).map(\.id)
     }
 
-    /// Lesson 3 up to the Read square (step 5): Edit, swap, Save, Stretch, the toast's Next.
-    private func reachRead(_ coach: TutorialCoordinator) {
-        for event: TutorialEvent in [.editEntered, .squareSwapped, .editSaved, .simpleSquareDone] { act(coach, event) }
-        coach.next()
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.openRead)
+    private func open(_ coach: TutorialCoordinator) -> [TutorialControlID] {
+        (coach.session?.spots ?? []).filter { !$0.ringed }.map(\.id)
     }
 
-    /// Lesson 3 up to the hold step (step 8): Read logged, the strip's Next.
-    private func reachHold(_ coach: TutorialCoordinator) {
-        reachRead(coach)
-        act(coach, .countingSheetOpened)
-        act(coach, .countLogged)
-        coach.next()
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.holdTidy)
+    // MARK: - Lesson 1 · Create a task
+
+    /// Plays lesson 1 through its two writes.
+    private func playCreateTask(_ coach: TutorialCoordinator, quick: String = "Stretch 5 min") {
+        coach.perform(.plusTapped)
+        coach.perform(.typed(.quickAdd, quick))
+        coach.perform(.quickAddSubmitted)
+        coach.perform(.specialTapped)
+        coach.perform(.typed(.verb, "Read"))
+        coach.perform(.fieldSubmitted(.verb))
+        coach.perform(.typed(.goal, "20"))
+        coach.perform(.fieldSubmitted(.goal))
+        coach.perform(.typed(.unit, "pages"))
+        coach.perform(.fieldSubmitted(.unit))
+        coach.perform(.addToLibraryTapped)
     }
 
-    // MARK: - Scripts
-
-    private static let createTaskScript: [TutorialEvent] = [
-        .tasksPlusTapped, .normalTaskCreated, .specialPanelOpened, .countingFieldsFilled, .countingTaskCreated,
-    ]
-    private static let createBoardScript: [TutorialEvent] = [
-        .oneOffBoardStarted, .boardSizePicked, .setupNext, .sourcesSheetOpened, .poolsPicked,
-        .sourceRowExpanded, .memberExcluded, .manualTaskAdded, .tasksStepNext,
-        .previewShuffled, .previewRearranged, .boardActivated,
-    ]
-
-    func test_createTask_advancesOnEachRealControlEventThenNext() throws {
-        let (coach, _) = try makeCoordinator()
+    func test_createTask_wiresOneControlPerStepAndWritesTwoRealTasks() throws {
+        let (coach, db) = try makeCoordinator()
         XCTAssertTrue(coach.start(.createTask))
-        for (index, event) in Self.createTaskScript.enumerated() {
-            XCTAssertEqual(coach.session?.step, index)
-            coach.handle(event)
-            if index < Self.createTaskScript.count - 1 {
-                XCTAssertEqual(coach.session?.awaitingNext, true, "step \(index + 1) holds on its done line")
-                XCTAssertEqual(coach.session?.step, index, "the step has not moved")
-                coach.next()
-            }
-        }
-        XCTAssertEqual(coach.session?.phase, .complete, "the last action completes without a Next")
-    }
+        XCTAssertEqual(ringed(coach), [.tasksPlus])
 
-    func test_createBoard_advancesOnEachRealControlEventThenNext() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createBoard))
-        XCTAssertEqual(coach.session?.steps.count, 12)
-        for (index, event) in Self.createBoardScript.enumerated() {
-            XCTAssertEqual(coach.session?.step, index)
-            coach.handle(event)
-            if index < Self.createBoardScript.count - 1 {
-                XCTAssertEqual(coach.session?.awaitingNext, true)
-                coach.next()
-            }
-        }
-        XCTAssertEqual(coach.session?.phase, .complete)
-    }
-
-    func test_completeBoard_actionStepsHoldAndReadOnlyStepsNeedOnlyNext() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        XCTAssertEqual(coach.session?.steps.count, 10)
-        act(coach, .editEntered)                                    // 1 Edit
-        act(coach, .squareSwapped)                                  // 2 Journal → Replace task
-        act(coach, .editSaved)                                      // 3 Save
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.tapStretch)
-        coach.handle(.simpleSquareDone)                             // 4 Stretch
-        XCTAssertEqual(coach.session?.awaitingNext, false, "the next step is read-only: no hold")
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.undoToast)
-        XCTAssertTrue(coach.currentStepIsReadOnly, "the Undo toast step is read-only")
-        coach.next()                                                // 5 Next
-        act(coach, .countingSheetOpened)                            // 6 Read
-        coach.handle(.countLogged)                                  // 7 chip
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.undoStrip)
-        XCTAssertTrue(coach.currentStepIsReadOnly)
-        coach.next()                                                // 8 Next closes the sheet
-        XCTAssertEqual(coach.session?.currentStep?.closesSquareSheet, true)
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.holdTidy)
-        coach.handle(.bingoMomentClosed)                            // 9 Tidy desk → Bingo moment closes
-        XCTAssertEqual(coach.session?.awaitingNext, true)
-        XCTAssertEqual(coach.currentText, "Bingo: the middle row is done.")
-        coach.next()
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.finale)
-        XCTAssertEqual(coach.session?.phase, .running)
-        coach.handle(.greenlogMomentClosed)                         // 10 Greenlog closes
-        XCTAssertEqual(coach.session?.phase, .complete)
-    }
-
-    // MARK: - The hold after an action
-
-    func test_anActionHoldsOnItsDoneLineUntilNext() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createTask))
-        coach.handle(.tasksPlusTapped)
-        XCTAssertEqual(coach.session?.step, 0)
-        XCTAssertEqual(coach.session?.awaitingNext, true)
-        XCTAssertEqual(coach.currentText, "The new task sheet is open.")
-        XCTAssertTrue(coach.showsNext)
-        XCTAssertEqual(coach.session?.litAnchors, [], "every hole is closed")
-        XCTAssertEqual(coach.session?.screenStep?.onSheet, true, "the next step's sheet owns the done card")
-        coach.handle(.normalTaskCreated)
-        XCTAssertEqual(coach.session?.step, 0, "nothing moves the lesson but Next")
-        coach.next()
+        coach.perform(.plusTapped)
         XCTAssertEqual(coach.session?.step, 1)
-        XCTAssertEqual(coach.session?.awaitingNext, false)
-        XCTAssertFalse(coach.showsNext)
-        XCTAssertEqual(coach.currentText, "Type a task, then tap Add.")
+        XCTAssertEqual(ringed(coach), [.quickAddRow])
+
+        coach.perform(.quickAddSubmitted)
+        XCTAssertEqual(coach.session?.step, 1, "an empty quick add writes nothing and stays")
+        XCTAssertEqual(try db.fetchTasks(userId: userId).count, 0)
+
+        coach.perform(.typed(.quickAdd, "  Stretch 5 min "))
+        coach.perform(.quickAddSubmitted)
+        XCTAssertEqual(coach.session?.step, 2)
+        let afterQuick = try db.fetchTasks(userId: userId)
+        XCTAssertEqual(afterQuick.map(\.title), ["Stretch 5 min"], "the Simple task is written at once, trimmed")
+        XCTAssertEqual(afterQuick.first?.type, .normal)
+        guard case .createTask(let s) = coach.session?.state else { return XCTFail("lesson 1 state") }
+        XCTAssertEqual(s.addedTitle, "Stretch 5 min")
+        XCTAssertEqual(s.quickText, "", "the field clears after the add")
+
+        coach.perform(.specialTapped)
+        XCTAssertEqual(ringed(coach), [.verbField])
+        coach.perform(.fieldSubmitted(.verb))
+        XCTAssertEqual(coach.session?.step, 3, "Return on an empty verb stays")
+        coach.perform(.typed(.verb, "Read"))
+        coach.perform(.fieldSubmitted(.verb))
+        XCTAssertEqual(ringed(coach), [.goalField])
+        XCTAssertEqual(open(coach), [.verbField], "the verb stays editable while the goal is lit")
+
+        coach.perform(.typed(.goal, "x"))
+        coach.perform(.fieldSubmitted(.goal))
+        XCTAssertEqual(coach.session?.step, 4, "a non-number goal stays")
+        coach.perform(.typed(.goal, "20"))
+        coach.perform(.fieldSubmitted(.goal))
+        XCTAssertEqual(ringed(coach), [.unitField])
+        XCTAssertEqual(Set(open(coach)), [.verbField, .goalField])
+
+        coach.perform(.typed(.unit, "pages"))
+        if case .createTask(let s2) = coach.session?.state {
+            XCTAssertEqual(s2.derivedTitle, "Read 20 pages", "the title fills itself in")
+        }
+        coach.perform(.fieldSubmitted(.unit))
+        XCTAssertEqual(ringed(coach), [.addToLibrary])
+
+        coach.perform(.addToLibraryTapped)
+        XCTAssertEqual(coach.session?.phase, .complete)
+        let all = try db.fetchTasks(userId: userId).sorted { $0.title < $1.title }
+        XCTAssertEqual(all.map(\.title), ["Read 20 pages", "Stretch 5 min"])
+        let counting = try XCTUnwrap(all.first { $0.type == .counting })
+        XCTAssertEqual(counting.action, "Read")
+        XCTAssertEqual(counting.unit, "pages")
+        XCTAssertEqual(counting.maxCount, 20)
+        XCTAssertEqual(try savedProgress(db).state(of: .createTask), .done)
+        XCTAssertEqual(try db.read { try SyncQueueItem.fetchCount($0) }, 2 + 1, "two task creates + the preferences update are enqueued")
     }
 
-    func test_wrongEventsAndNextOnActionStepsAreIgnored() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createTask))
-        coach.handle(.normalTaskCreated)      // not the step's event
-        coach.next()                          // action steps have no Next before their action
+    func test_createTask_outOfOrderEventsAreIgnored() throws {
+        let (coach, db) = try makeCoordinator()
+        coach.start(.createTask)
+        coach.perform(.specialTapped)
+        coach.perform(.addToLibraryTapped)
+        coach.perform(.fieldSubmitted(.unit))
         XCTAssertEqual(coach.session?.step, 0)
-        XCTAssertEqual(coach.session?.awaitingNext, false)
-        coach.handle(.tasksPlusTapped)
-        XCTAssertEqual(coach.session?.awaitingNext, true)
+        XCTAssertEqual(try db.fetchTasks(userId: userId).count, 0)
     }
 
-    func test_eventsAreIgnoredWhileTheLeaveSheetIsUp() throws {
+    func test_createTask_completeCardNamesTheTwoTasks() throws {
         let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createTask))
-        coach.requestLeave()
-        coach.handle(.tasksPlusTapped)
-        XCTAssertEqual(coach.session?.awaitingNext, false)
-        coach.keepGoing()
-        coach.handle(.tasksPlusTapped)
-        XCTAssertEqual(coach.session?.awaitingNext, true)
+        coach.start(.createTask)
+        playCreateTask(coach, quick: "Floss")
+        guard case .createTask(let s) = coach.session?.state else { return XCTFail() }
+        XCTAssertEqual(s.addedTitle, "Floss")
+        XCTAssertEqual(s.countingTitle, "Read 20 pages")
     }
 
-    /// A step is never skipped: a moment closing means nothing unless the
-    /// current step waits for exactly that moment.
-    func test_aMomentClosingOnAnotherStepNeverSkipsAStep() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        coach.handle(.bingoMomentClosed)
-        XCTAssertEqual(coach.session?.step, 0)
-        reachHold(coach)
-        coach.handle(.greenlogMomentClosed)
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.holdTidy, "the Greenlog is the finale's event, not the hold step's")
-        XCTAssertEqual(coach.session?.phase, .running)
-    }
+    // MARK: - Lesson 2 · Create a board
 
-    func test_momentOpenHidesTheLayerUntilItCloses() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        coach.setMomentOpen(true)
-        XCTAssertEqual(coach.session?.momentOpen, true)
-        XCTAssertTrue(coach.signals.momentOpen, "a square sheet over the moment closes on this")
-        coach.handle(.bingoMomentClosed)       // not this step's event, but it still un-hides
-        XCTAssertEqual(coach.session?.momentOpen, false)
-        XCTAssertFalse(coach.signals.momentOpen)
-    }
-
-    // MARK: - What the squares accept
-
-    func test_squaresAcceptOnlyTheStepsGesture() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertEqual(coach.signals.squareInteraction, .free, "no lesson: as shipped")
-        XCTAssertTrue(coach.start(.completeBoard))
-        XCTAssertEqual(coach.signals.squareInteraction, .none, "Edit: squares are inert")
-        coach.handle(.editEntered)
-        XCTAssertEqual(coach.signals.squareInteraction, .none, "waiting for Next: inert")
-        coach.next()
-        act(coach, .squareSwapped)
-        act(coach, .editSaved)
-        XCTAssertEqual(coach.signals.squareInteraction, .tap, "Stretch: tap only")
-        coach.handle(.simpleSquareDone)
-        coach.next()
-        XCTAssertEqual(coach.signals.squareInteraction, .tap, "Read: tap only")
-        act(coach, .countingSheetOpened)
-        XCTAssertEqual(coach.signals.squareInteraction, .none, "the sheet's steps")
-        coach.handle(.countLogged)
-        coach.next()
-        XCTAssertEqual(coach.signals.squareInteraction, .hold, "Tidy desk: hold only")
-        coach.handle(.bingoMomentClosed)
-        XCTAssertEqual(coach.signals.squareInteraction, .none)
-        coach.next()
-        XCTAssertEqual(coach.signals.squareInteraction, .tap, "the finale: tap only")
-    }
-
-    // MARK: - Copy that follows what the user did
-
-    func test_loggedSummaryFoldsIntoTheStepCopy() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        reachRead(coach)
-        act(coach, .countingSheetOpened)
-        coach.reportLog(summary: "22 of 20", finishedSquare: true)
-        coach.handle(.countLogged)
-        XCTAssertEqual(coach.currentText, "22 of 20. The square is done; Undo stays here.")
-    }
-
-    func test_loggedSummaryOnAnUnfinishedSquareDoesNotClaimDone() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        reachRead(coach)
-        act(coach, .countingSheetOpened)
-        coach.reportLog(summary: "13 of 20", finishedSquare: false)
-        coach.handle(.countLogged)
-        XCTAssertEqual(coach.currentText, "13 of 20. Undo stays here.")
-    }
-
-    func test_poolSummaryFoldsIntoTheDoneLine() throws {
-        let (coach, _) = try makeCoordinator()
+    func test_createBoard_onePathThroughTheWizard() throws {
+        let (coach, db) = try makeCoordinator()
         XCTAssertTrue(coach.start(.createBoard))
-        for event in Self.createBoardScript.prefix(4) { act(coach, event) }
-        XCTAssertEqual(coach.currentText, "Pick one pool, then tap Done.")
-        coach.reportPool(summary: "Home fills eight squares")
-        coach.handle(.poolsPicked)
-        XCTAssertEqual(coach.currentText, "Home fills eight squares.")
+        XCTAssertEqual(ringed(coach), [.oneOffCard])
+
+        coach.perform(.oneOffTapped)
+        XCTAssertEqual(ringed(coach), [.timeframeWeekly])
+        coach.perform(.setupNextTapped)
+        XCTAssertEqual(coach.session?.step, 1, "Next means nothing before Weekly")
+        coach.perform(.weeklyTapped)
+        XCTAssertEqual(ringed(coach), [.sizeCard3])
+
+        coach.perform(.setupNextTapped)
+        XCTAssertEqual(coach.session?.step, 2, "Next is not wired until 3×3 is picked")
+        coach.perform(.size3Tapped)
+        XCTAssertEqual(coach.session?.step, 2, "picking the size moves the ring, not the step")
+        XCTAssertEqual(ringed(coach), [.setupNext])
+        XCTAssertEqual(open(coach), [.sizeCard3], "the size stays editable while Next is lit")
+        coach.perform(.setupNextTapped)
+        XCTAssertEqual(coach.session?.step, 3)
+        XCTAssertEqual(ringed(coach), [.addFromPool])
+
+        coach.perform(.addFromPoolTapped)
+        XCTAssertEqual(ringed(coach), [.poolRow("Fitness")])
+        coach.perform(.poolToggled("Reading"))
+        coach.perform(.sourcesDoneTapped)
+        XCTAssertEqual(coach.session?.step, 4, "a locked pool and an early Done do nothing")
+        coach.perform(.poolToggled("Fitness"))
+        XCTAssertEqual(ringed(coach), [.sourcesDone])
+        coach.perform(.poolToggled("Fitness"))
+        XCTAssertEqual(ringed(coach), [.poolRow("Fitness")], "tapping Fitness again unchecks it and dims Done")
+        coach.perform(.poolToggled("Fitness"))
+        coach.perform(.sourcesDoneTapped)
+        XCTAssertEqual(coach.session?.step, 5)
+        guard case .createBoard(let s5) = coach.session?.state else { return XCTFail() }
+        XCTAssertEqual(s5.poolCount, 8)
+        XCTAssertTrue(s5.satisfied)
+        XCTAssertFalse(s5.sourceSheetOpen)
+        XCTAssertEqual(ringed(coach), [.sourceRow])
+
+        coach.perform(.sourceRowTapped)
+        XCTAssertEqual(ringed(coach), [.memberExclude("Bike to work")])
+        coach.perform(.memberExcluded("Run 5k"))
+        XCTAssertEqual(coach.session?.step, 6, "only Bike to work's ✕ is wired")
+        coach.perform(.memberExcluded("Bike to work"))
+        guard case .createBoard(let s7) = coach.session?.state else { return XCTFail() }
+        XCTAssertEqual(s7.poolCount, 7)
+        XCTAssertFalse(s7.satisfied, "7/8: Next dims")
+        XCTAssertFalse(s7.sourceExpanded, "the stage collapses the panel")
+        XCTAssertEqual(s7.sourceSubtitle, "8 tasks · 1 excluded")
+        XCTAssertEqual(ringed(coach), [.wizardQuickRow])
+
+        coach.perform(.tasksNextTapped)
+        XCTAssertEqual(coach.session?.step, 7, "Next is not wired at 7/8")
+        coach.perform(.typed(.wizardQuickAdd, "Drink water"))
+        coach.perform(.wizardQuickSubmitted)
+        XCTAssertEqual(coach.session?.step, 7)
+        XCTAssertEqual(ringed(coach), [.tasksNext], "8/8: the ring moves to Next")
+        XCTAssertEqual(coach.session?.text, "Eight of eight. Tap Next.")
+        coach.perform(.wizardQuickSubmitted)
+        guard case .createBoard(let s8) = coach.session?.state else { return XCTFail() }
+        XCTAssertEqual(s8.poolCount, 8, "one hand-added task only")
+        coach.perform(.tasksNextTapped)
+        XCTAssertEqual(coach.session?.step, 8)
+        XCTAssertEqual(ringed(coach), [.activate])
+
+        coach.perform(.activateTapped)
+        XCTAssertEqual(coach.session?.phase, .complete)
+        XCTAssertEqual(try savedProgress(db).state(of: .createBoard), .done)
+        XCTAssertEqual(try db.fetchBoards(userId: userId).count, 0, "nothing was saved to the boards")
+        XCTAssertEqual(try db.fetchTasks(userId: userId).count, 0, "the hand-added task is part of the fixture")
+    }
+
+    func test_createBoard_previewPutsTheHandAddedTaskInTheExcludedSlot() {
+        let cells = TutorialCreateBoardFixture.previewCells(handAdded: "Drink water")
+        XCTAssertEqual(cells.count, 9)
+        XCTAssertNil(cells[4], "free centre")
+        XCTAssertEqual(cells.compactMap { $0?.title }, ["Run 5k", "Stretch 10 min", "Walk 10k steps", "Yoga", "Push-ups", "Drink water", "Plank 2 min", "Lift weights"])
+        XCTAssertFalse(cells.compactMap { $0?.title }.contains("Bike to work"))
+    }
+
+    // MARK: - Lesson 3 · Complete a board
+
+    private typealias L3 = TutorialCompleteBoardState.Step
+
+    private func l3(_ coach: TutorialCoordinator) -> TutorialCompleteBoardState? {
+        if case .completeBoard(let s) = coach.session?.state { return s }
+        return nil
+    }
+
+    /// Lesson 3 up to the hold step.
+    private func reachHold(_ coach: TutorialCoordinator) {
+        coach.perform(.editTapped)
+        coach.perform(.editSquareTapped(TutorialSampleWeek.Slot.journal))
+        coach.perform(.replaceRowTapped(TutorialSampleWeek.replacement))
+        coach.perform(.saveTapped)
+        coach.perform(.squareTapped(TutorialSampleWeek.Slot.stretch))
         coach.next()
-        XCTAssertEqual(coach.currentText, "Tap the pool to see its tasks.")
+        coach.perform(.squareTapped(TutorialSampleWeek.Slot.read))
+        coach.perform(.chipTapped(5))
+        coach.perform(.chipTapped(5))
+        coach.next()
+        XCTAssertEqual(coach.session?.step, L3.holdTidy)
     }
 
-    func test_everyLessonThreeStepNamesItsSquare() throws {
-        let steps = TutorialCatalog.completeBoardSteps
-        XCTAssertEqual(steps[TutorialCatalog.CompleteStep.swapSquare].text, "Tap Journal, then Replace task.")
-        XCTAssertEqual(steps[TutorialCatalog.CompleteStep.tapStretch].text, "Tap Stretch to complete it.")
-        XCTAssertEqual(steps[TutorialCatalog.CompleteStep.openRead].text, "Tap Read 20 pages to log.")
-        XCTAssertEqual(steps[TutorialCatalog.CompleteStep.holdTidy].text, "Hold Tidy desk, then tap Mark done.")
-    }
-
-    // MARK: - Completion, leave, resume
-
-    func test_completionIsSavedToTheSyncedPreferences() throws {
-        let (coach, real) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createTask))
-        for event in Self.createTaskScript { act(coach, event) }
-        XCTAssertEqual(coach.progress.state(of: .createTask), .done)
-        XCTAssertEqual(try savedProgress(real).state(of: .createTask), .done)
-        let user = try XCTUnwrap(real.fetchUser(id: userId))
-        XCTAssertEqual(user.version, 6, "steps 2-5 and the completion each write once (the first step never does)")
-        let queued = try real.fetchPendingSyncItems()
-        XCTAssertTrue(queued.contains { $0.entityType == "users" && $0.entityId == userId }, "progress rides the user doc's sync")
-    }
-
-    func test_finishCompletedLesson_handsTheLessonToTheBoardAndEndsTheSession() throws {
+    func test_completeBoard_editSwapSaveThenSimpleSquare() throws {
         let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createTask))
-        for event in Self.createTaskScript { act(coach, event) }
-        coach.finishCompletedLesson()
+        XCTAssertTrue(coach.start(.completeBoard))
+        XCTAssertEqual(l3(coach)?.done, [2, 3, 7])
+        XCTAssertEqual(l3(coach)?.completeLines, [], "no line at the start")
+        XCTAssertEqual(ringed(coach), [.editButton])
+
+        coach.perform(.squareTapped(TutorialSampleWeek.Slot.stretch))
+        XCTAssertEqual(coach.session?.step, 0, "squares are not wired before Edit")
+        coach.perform(.editTapped)
+        XCTAssertEqual(l3(coach)?.editing, true)
+        XCTAssertEqual(ringed(coach), [.editSquare(1)])
+        coach.perform(.editSquareTapped(0))
+        XCTAssertEqual(coach.session?.step, 1, "only Journal is wired")
+        coach.perform(.editSquareTapped(1))
+        XCTAssertEqual(l3(coach)?.replaceSheetOpen, true)
+        XCTAssertEqual(ringed(coach), [.replaceRow("Meditate 5 min")])
+        coach.perform(.replaceRowTapped("Floss"))
+        XCTAssertEqual(coach.session?.step, 2, "the other rows are locked")
+        coach.perform(.replaceRowTapped("Meditate 5 min"))
+        XCTAssertEqual(l3(coach)?.swapped, true)
+        XCTAssertEqual(l3(coach)?.replaceSheetOpen, false)
+        XCTAssertEqual(l3(coach)?.changeCount, 1)
+        XCTAssertEqual(l3(coach)?.title(at: 1), "Meditate 5 min")
+        XCTAssertEqual(ringed(coach), [.saveChanges])
+        coach.perform(.saveTapped)
+        XCTAssertEqual(l3(coach)?.editing, false)
+        XCTAssertEqual(ringed(coach), [.square(0)])
+
+        coach.perform(.squareTapped(TutorialSampleWeek.Slot.tidy))
+        XCTAssertEqual(coach.session?.step, L3.tapStretch, "only Stretch is wired")
+        coach.perform(.squareTapped(0))
+        XCTAssertEqual(l3(coach)?.done.contains(0), true)
+        XCTAssertEqual(l3(coach)?.toastVisible, true)
+        XCTAssertEqual(l3(coach)?.completeLines, [], "Stretch completes no line")
+        XCTAssertEqual(coach.session?.showsNext, true, "the toast step is read-only")
+        XCTAssertEqual(ringed(coach), [.undoToast])
+        coach.perform(.squareTapped(TutorialSampleWeek.Slot.read))
+        XCTAssertEqual(coach.session?.step, L3.toast, "nothing but Next moves a read-only step")
+        coach.next()
+        XCTAssertEqual(l3(coach)?.toastVisible, false)
+        XCTAssertEqual(ringed(coach), [.square(4)])
+    }
+
+    func test_completeBoard_chipTwiceThenHoldThenBingoThenFinale() throws {
+        let (coach, db) = try makeCoordinator()
+        coach.start(.completeBoard)
+        coach.perform(.editTapped)
+        coach.perform(.editSquareTapped(1))
+        coach.perform(.replaceRowTapped("Meditate 5 min"))
+        coach.perform(.saveTapped)
+        coach.perform(.squareTapped(0))
+        coach.next()
+        coach.perform(.squareTapped(4))
+        XCTAssertEqual(l3(coach)?.squareSheetOpen, true)
+        XCTAssertEqual(ringed(coach), [.chip(5)])
+        coach.perform(.chipTapped(1))
+        XCTAssertEqual(l3(coach)?.readCount, 12, "only +5 is wired")
+        coach.perform(.chipTapped(5))
+        XCTAssertEqual(coach.session?.step, L3.chips, "the first tap stays on the step")
+        XCTAssertEqual(l3(coach)?.readCount, 17)
+        XCTAssertEqual(l3(coach)?.undoText, "Logged +5 pages · Sample week")
+        XCTAssertEqual(l3(coach)?.done.contains(4), false)
+        coach.perform(.chipTapped(5))
+        XCTAssertEqual(coach.session?.step, L3.undoStrip, "the second tap advances")
+        XCTAssertEqual(l3(coach)?.readCount, 22, "past the goal still counts")
+        XCTAssertEqual(l3(coach)?.done.contains(4), true)
+        XCTAssertEqual(l3(coach)?.completeLines, [], "Read completes no line")
+        XCTAssertEqual(ringed(coach), [.undoStrip])
+        XCTAssertEqual(coach.session?.showsNext, true)
+        coach.next()
+        XCTAssertEqual(l3(coach)?.squareSheetOpen, false)
+        XCTAssertEqual(ringed(coach), [.square(5)])
+
+        coach.perform(.squareTapped(5))
+        XCTAssertEqual(coach.session?.step, L3.holdTidy, "a plain tap on Tidy desk does nothing")
+        coach.perform(.squareHeld(5))
+        XCTAssertEqual(l3(coach)?.holdMenuOpen, true)
+        XCTAssertEqual(ringed(coach), [.markDone])
+        coach.perform(.markDoneTapped)
+        XCTAssertEqual(l3(coach)?.done.contains(5), true)
+        XCTAssertEqual(l3(coach)?.holdMenuOpen, false)
+        XCTAssertEqual(l3(coach)?.moment, .bingo)
+        XCTAssertEqual(l3(coach)?.completeLines, [[3, 4, 5]], "the middle row, and only it")
+        XCTAssertEqual(coach.session?.step, L3.finale)
+        XCTAssertEqual(coach.session?.state.coachHidden, true, "the moment plays whole")
+        XCTAssertEqual(coach.session?.spots, [], "nothing is lit under the moment")
+        coach.perform(.squareTapped(1))
+        XCTAssertEqual(l3(coach)?.done.contains(1), false, "squares are not wired under the moment")
+
+        coach.perform(.momentBackTapped)
+        XCTAssertNil(l3(coach)?.moment)
+        XCTAssertEqual(coach.session?.phase, .running)
+        XCTAssertEqual(Set(ringed(coach)), [.square(1), .square(6), .square(8)], "three left, any order")
+        XCTAssertEqual(l3(coach)?.completedCount, 6)
+
+        coach.perform(.squareTapped(8))
+        XCTAssertEqual(l3(coach)?.completeLines.count, 3, "Water plants closes the right column and a diagonal: more gold rings…")
+        XCTAssertNil(l3(coach)?.moment, "…with no moment")
+        XCTAssertEqual(Set(ringed(coach)), [.square(1), .square(6)])
+        coach.perform(.squareTapped(6))
+        XCTAssertNil(l3(coach)?.moment)
+        coach.perform(.squareTapped(1))
+        XCTAssertEqual(l3(coach)?.completedCount, 9)
+        XCTAssertEqual(l3(coach)?.moment, .greenlog, "the last square plays the Greenlog only")
+        XCTAssertEqual(coach.session?.phase, .running, "not done until a Greenlog button")
+        XCTAssertEqual(try savedProgress(db).state(of: .completeBoard), .inProgress(step: L3.finale))
+
+        coach.perform(.momentBackTapped)
+        XCTAssertEqual(coach.session?.phase, .complete)
+        XCTAssertEqual(coach.session?.exit, .board, "Back to board shows the complete card")
+        XCTAssertEqual(try savedProgress(db).state(of: .completeBoard), .done)
+        XCTAssertEqual(try db.fetchBoards(userId: userId).count, 0, "no writes at any point")
+        XCTAssertEqual(try db.fetchTasks(userId: userId).count, 0)
+    }
+
+    func test_completeBoard_greenlogStartNewBoardExitsToCreate() throws {
+        let (coach, _) = try makeCoordinator()
+        coach.start(.completeBoard)
+        reachHold(coach)
+        coach.perform(.squareHeld(5))
+        coach.perform(.markDoneTapped)
+        coach.perform(.momentBackTapped)
+        for slot in [1, 6, 8] { coach.perform(.squareTapped(slot)) }
+        XCTAssertEqual(l3(coach)?.moment, .greenlog)
+        coach.perform(.momentNewBoardTapped)
+        XCTAssertEqual(coach.session?.phase, .complete)
+        XCTAssertEqual(coach.isClosing, true, "the stage closes straight away")
+        XCTAssertEqual(coach.justCompleted?.lesson, .completeBoard)
+        XCTAssertEqual(coach.justCompleted?.exit, .create)
+    }
+
+    func test_completeBoard_fixtureClosesNoLineBeforeTheHold() {
+        var done = TutorialSampleWeek.initiallyDone
+        XCTAssertEqual(TutorialSampleWeek.completeLines(done), [])
+        done.insert(TutorialSampleWeek.Slot.stretch)
+        XCTAssertEqual(TutorialSampleWeek.completeLines(done), [])
+        done.insert(TutorialSampleWeek.Slot.read)
+        XCTAssertEqual(TutorialSampleWeek.completeLines(done), [])
+        done.insert(TutorialSampleWeek.Slot.tidy)
+        XCTAssertEqual(TutorialSampleWeek.completeLines(done), [[3, 4, 5]])
+    }
+
+    // MARK: - Leaving and resuming
+
+    func test_leave_savesTheStepAndResumeRebuildsTheImpliedState() throws {
+        let (coach, db) = try makeCoordinator()
+        coach.start(.createBoard)
+        coach.perform(.oneOffTapped)
+        coach.perform(.weeklyTapped)
+        coach.perform(.size3Tapped)
+        coach.perform(.setupNextTapped)
+        coach.perform(.addFromPoolTapped)
+        coach.perform(.poolToggled("Fitness"))
+        coach.perform(.sourcesDoneTapped)
+        coach.perform(.sourceRowTapped)
+        coach.perform(.memberExcluded("Bike to work"))
+        coach.perform(.typed(.wizardQuickAdd, "Drink water"))
+        coach.perform(.wizardQuickSubmitted)
+        XCTAssertEqual(coach.session?.step, 7)
+
+        coach.requestLeave()
+        XCTAssertEqual(coach.session?.phase, .confirmingLeave)
+        coach.keepGoing()
+        XCTAssertEqual(coach.session?.phase, .running)
+        coach.requestLeave()
+        coach.leave()
         XCTAssertTrue(coach.isClosing)
-        XCTAssertNotNil(coach.session, "the session stays until the cover has finished dismissing")
-        XCTAssertEqual(coach.justCompleted, .createTask)
         coach.stageDidDismiss()
         XCTAssertNil(coach.session)
-        XCTAssertEqual(coach.justCompleted, .createTask, "the board still plays the pop")
+        XCTAssertEqual(try savedProgress(db).state(of: .createBoard), .inProgress(step: 7))
+
+        XCTAssertTrue(coach.start(.createBoard))
+        XCTAssertEqual(coach.session?.step, 7)
+        XCTAssertEqual(coach.session?.resumed, true)
+        guard case .createBoard(let s) = coach.session?.state else { return XCTFail() }
+        XCTAssertEqual(s.screen, .tasks)
+        XCTAssertTrue(s.poolAdded)
+        XCTAssertTrue(s.excluded)
+        XCTAssertFalse(s.sourceExpanded)
+        XCTAssertEqual(s.handAddedTitle, "Drink water", "what was typed comes back")
+        XCTAssertEqual(ringed(coach), [.tasksNext])
+        coach.perform(.tasksNextTapped)
+        XCTAssertEqual(coach.session?.resumed, false, "the RESUMED tag shows on the first mark only")
+    }
+
+    func test_resume_lesson1_rebuildsTheFieldsWithWhatWasTyped() throws {
+        let (coach, db) = try makeCoordinator()
+        coach.start(.createTask)
+        coach.perform(.plusTapped)
+        coach.perform(.typed(.quickAdd, "Floss"))
+        coach.perform(.quickAddSubmitted)
+        coach.perform(.specialTapped)
+        coach.perform(.typed(.verb, "Walk"))
+        coach.perform(.fieldSubmitted(.verb))
+        coach.leave()
+        coach.stageDidDismiss()
+        XCTAssertEqual(try savedProgress(db).state(of: .createTask), .inProgress(step: 4))
+
+        coach.start(.createTask)
+        guard case .createTask(let s) = coach.session?.state else { return XCTFail() }
+        XCTAssertTrue(s.sheetOpen)
+        XCTAssertTrue(s.panelOpen)
+        XCTAssertEqual(s.addedTitle, "Floss", "the Added row reflects the real write")
+        XCTAssertEqual(s.verb, "Walk")
+        XCTAssertEqual(s.goal, "")
+        XCTAssertEqual(ringed(coach), [.goalField])
+        XCTAssertEqual(try db.fetchTasks(userId: userId).count, 1, "Floss stays in the library")
+    }
+
+    func test_implied_lesson3_atEveryStep() {
+        let L = TutorialCompleteBoardState.Step.self
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.pickReplacement).replaceSheetOpen, true)
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.save).changeCount, 1)
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.tapStretch).editing, false)
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.toast).toastVisible, true)
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.chips).readCount, 12)
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.undoStrip).readCount, 22)
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.undoStrip).undoText, "Logged +5 pages · Sample week")
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.holdTidy).done, [0, 2, 3, 4, 7])
+        XCTAssertEqual(TutorialCompleteBoardState.implied(step: L.markDone).holdMenuOpen, true)
+        let finale = TutorialCompleteBoardState.implied(step: L.finale)
+        XCTAssertEqual(finale.done, [0, 2, 3, 4, 5, 7])
+        XCTAssertEqual(finale.completeLines, [[3, 4, 5]])
+        XCTAssertNil(finale.moment)
+        XCTAssertEqual(Set(finale.spots(step: L.finale).map(\.id)), [.square(1), .square(6), .square(8)])
+    }
+
+    func test_replayOfADoneLessonStartsAtStepOneAndKeepsItDone() throws {
+        var progress = TutorialProgress.empty
+        progress.set(.createBoard, .done)
+        let (coach, db) = try makeCoordinator(progress: progress)
+        XCTAssertTrue(coach.start(.createBoard))
+        XCTAssertEqual(coach.session?.step, 0)
+        XCTAssertEqual(coach.session?.resumed, false)
+        coach.perform(.oneOffTapped)
+        coach.leave()
+        coach.stageDidDismiss()
+        XCTAssertEqual(coach.progress.state(of: .createBoard), .done, "leaving a replay never demotes a finished lesson")
+        XCTAssertEqual(try savedProgress(db), .empty, "and writes nothing (the seeded row never held this progress)")
+    }
+
+    func test_start_refusesProSquaresAndASecondLesson() throws {
+        let (coach, _) = try makeCoordinator()
+        XCTAssertFalse(coach.start(.multiStep))
+        XCTAssertTrue(coach.start(.createTask))
+        XCTAssertFalse(coach.start(.createBoard))
+    }
+
+    func test_eventsAfterCompletionOrWhileClosingAreIgnored() throws {
+        let (coach, _) = try makeCoordinator()
+        coach.start(.createBoard)
+        coach.perform(.oneOffTapped)
+        coach.leave()
+        coach.perform(.weeklyTapped)
+        XCTAssertEqual(coach.session?.step, 1, "closing: no more events")
+    }
+
+    func test_finishCompletedLesson_reportsTheExit() throws {
+        let (coach, _) = try makeCoordinator()
+        coach.start(.createTask)
+        playCreateTask(coach)
+        XCTAssertEqual(coach.session?.phase, .complete)
+        coach.finishCompletedLesson(exit: .tasks)
+        XCTAssertEqual(coach.justCompleted?.lesson, .createTask)
+        XCTAssertEqual(coach.justCompleted?.exit, .tasks)
+        XCTAssertTrue(coach.isClosing)
+        coach.stageDidDismiss()
+        XCTAssertNil(coach.session)
         coach.consumeJustCompleted()
         XCTAssertNil(coach.justCompleted)
     }
 
-    func test_leaveSavesTheStepAndResumeOpensThereWithTheResumedTag() throws {
-        let (coach, real) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createBoard))
-        for event in Self.createBoardScript.prefix(3) { act(coach, event) }
-        coach.requestLeave()
-        XCTAssertEqual(coach.session?.phase, .confirmingLeave)
-        coach.leave()
-        XCTAssertNotNil(coach.sandboxDatabase, "the sandbox lives until the cover is gone")
-        coach.stageDidDismiss()
-        XCTAssertNil(coach.session)
-        XCTAssertNil(coach.sandboxDatabase, "the sandbox is discarded once the cover has dismissed")
-        XCTAssertEqual(coach.progress.state(of: .createBoard), .inProgress(step: 3))
-        XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 3))
-
-        XCTAssertTrue(coach.start(.createBoard))
-        XCTAssertEqual(coach.session?.step, 0, "the wizard's state cannot be rebuilt, so lesson 2 reopens at step 1")
-        XCTAssertEqual(coach.session?.resumed, true, "the RESUMED tag still shows")
-        XCTAssertNotNil(coach.sandboxDatabase, "resume rebuilds the sandbox silently")
-        coach.handle(.oneOffBoardStarted)
-        XCTAssertEqual(coach.session?.resumed, false, "RESUMED tags only the first coach mark")
-        XCTAssertEqual(coach.progress.state(of: .createBoard), .inProgress(step: 3), "a saved place is never lowered")
-    }
-
-    func test_leavingWhileHoldingOnADoneLineSavesTheNextStep() throws {
-        let (coach, real) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createBoard))
-        coach.handle(.oneOffBoardStarted)
-        XCTAssertEqual(coach.session?.awaitingNext, true)
-        coach.leave()
-        coach.stageDidDismiss()
-        XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 1), "the action happened: the place is the step about to light")
-    }
-
-    func test_leavingAtTheFirstStepSavesNothing() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createTask))
-        coach.requestLeave()
-        coach.leave()
-        coach.stageDidDismiss()
-        XCTAssertEqual(coach.progress, .empty)
-    }
-
-    func test_replayingADoneLessonStartsAtStepOneAndLeavingKeepsItDone() throws {
-        var progress = TutorialProgress.empty
-        progress.set(.createTask, .done)
-        let (coach, real) = try makeCoordinator(progress: progress)
-        XCTAssertTrue(coach.start(.createTask))
-        XCTAssertEqual(coach.session?.step, 0)
-        XCTAssertEqual(coach.session?.resumed, false)
-        let versionBefore = try XCTUnwrap(real.fetchUser(id: userId)).version
-        act(coach, .tasksPlusTapped)
-        act(coach, .normalTaskCreated)
-        coach.leave()
-        coach.stageDidDismiss()
-        XCTAssertEqual(coach.progress.state(of: .createTask), .done)
-        XCTAssertEqual(try XCTUnwrap(real.fetchUser(id: userId)).version, versionBefore, "replaying writes nothing")
-    }
-
-    func test_proLessonsDoNotStartAndOnlyOneSessionRuns() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertFalse(coach.start(.multiStep))
-        XCTAssertNil(coach.session)
-        XCTAssertTrue(coach.start(.createTask))
-        XCTAssertFalse(coach.start(.createBoard), "a second lesson cannot start over a running one")
-    }
-
-    // MARK: - Card dismissal
-
-    func test_cardCanOnlyBeDismissedOnceTheMiddleRowIsDone() throws {
-        let (coach, real) = try makeCoordinator()
+    func test_dismissCard_onlyOnceTheMiddleRowIsDone() throws {
+        let (coach, db) = try makeCoordinator()
         coach.dismissCard()
-        XCTAssertTrue(coach.progress.showsCard, "not allowed before the free row is done")
+        XCTAssertFalse(coach.progress.cardDismissed)
         var progress = TutorialProgress.empty
         for id in TutorialLessonID.middleRow { progress.set(id, .done) }
-        coach.refresh(from: progress)
-        coach.dismissCard()
-        XCTAssertFalse(coach.progress.showsCard)
-        XCTAssertTrue(try savedProgress(real).cardDismissed, "the dismissal is stored with the account")
+        let (coach2, db2) = try makeCoordinator(progress: progress)
+        coach2.dismissCard()
+        XCTAssertTrue(coach2.progress.cardDismissed)
+        XCTAssertTrue(try savedProgress(db2).cardDismissed)
+        _ = db
     }
 
-    func test_refreshTakesAProgressChangeThatArrivedFromSync() throws {
-        let (coach, _) = try makeCoordinator()
-        var remote = TutorialProgress.empty
-        remote.set(.createBoard, .done)
-        coach.refresh(from: remote)
-        XCTAssertEqual(coach.progress.state(of: .createBoard), .done)
-    }
-
-    func test_signalsReflectTheRunningSession() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertEqual(coach.signals, .inactive)
-        XCTAssertTrue(coach.start(.completeBoard))
-        XCTAssertTrue(coach.signals.active)
-        XCTAssertTrue(coach.signals.sandboxed)
-        XCTAssertFalse(coach.signals.isCompleting)
-        XCTAssertTrue(coach.start(.createTask) == false)
-        coach.leave()
-        coach.stageDidDismiss()
-        XCTAssertTrue(coach.start(.createTask))
-        XCTAssertFalse(coach.signals.sandboxed, "lesson 1 writes real tasks, so nothing is sandboxed")
-    }
-
-    // MARK: - Persistence on every step
-
-    func test_everyAdvanceSavesThePlaceWithoutLeaving() throws {
-        let (coach, real) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createBoard))
-        let v0 = try XCTUnwrap(real.fetchUser(id: userId)).version
-        for event in Self.createBoardScript.prefix(3) { act(coach, event) }
-        // An app kill here (no Leave) still keeps "Your place is saved".
-        XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 3))
-        XCTAssertEqual(try XCTUnwrap(real.fetchUser(id: userId)).version, v0 + 3, "each action writes its next step once; Next writes nothing")
-        coach.leave()
-        XCTAssertEqual(try XCTUnwrap(real.fetchUser(id: userId)).version, v0 + 3, "leaving with nothing new writes nothing")
-    }
-
-    func test_aStageDismissedWithoutLeaveEndsTheSessionAndSavesThePlace() throws {
-        let (coach, real) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        act(coach, .editEntered)
-        act(coach, .squareSwapped)
-        // e.g. Archive from the Edit BOARD section dismissed the cover.
-        coach.stageDidDismiss()
-        XCTAssertNil(coach.session)
-        XCTAssertNil(coach.sandboxDatabase)
-        XCTAssertEqual(try savedProgress(real).state(of: .completeBoard), .inProgress(step: TutorialCatalog.CompleteStep.saveEdit))
-        XCTAssertTrue(coach.start(.createTask), "lessons stay startable afterwards")
-    }
-
-    // MARK: - Resume consistency (lesson 3 reseeds)
-
-    private func resumeFacts(saved: Int) throws -> (step: Int, stretchDone: Bool, read: CountValue, tidyDone: Bool) {
+    func test_reset_clearsEverything() throws {
         var progress = TutorialProgress.empty
-        progress.set(.completeBoard, .inProgress(step: saved))
-        let (coach, _) = try makeCoordinator(progress: progress)
-        XCTAssertTrue(coach.start(.completeBoard))
-        let session = try XCTUnwrap(coach.session)
-        let db = try XCTUnwrap(coach.sandboxDatabase)
-        let boardId = try XCTUnwrap(session.sampleBoardId)
-        let vm = BoardPlayViewModel(boardId: boardId, userId: userId, database: db)
-        vm.reload()
-        let deadline = Date().addingTimeInterval(30)
-        while !(vm.board?.id == boardId && vm.boardTasks.count == 9 && !vm.allTasks.isEmpty), Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-        }
-        func task(_ title: String) throws -> Task { try XCTUnwrap(vm.allTasks.first { $0.title == title }) }
-        return (
-            session.step,
-            vm.windowedCompletedValue(try task("Stretch")),
-            vm.windowedCountValue(try task("Read 20 pages")),
-            vm.windowedCompletedValue(try task("Tidy desk"))
-        )
+        progress.set(.createTask, .done)
+        let (coach, db) = try makeCoordinator(progress: progress)
+        coach.start(.createBoard)
+        coach.reset()
+        XCTAssertNil(coach.session)
+        XCTAssertEqual(coach.progress, .empty)
+        XCTAssertEqual(try savedProgress(db), .empty)
     }
 
-    func test_lessonThreeResumeReseedsTheBoardToTheSavedStepAndSkipsStepsWhoseControlIsGone() throws {
-        let s = TutorialCatalog.CompleteStep.self
-        var facts = try resumeFacts(saved: s.undoToast)     // Stretch done, the toast is gone -> Read
-        XCTAssertEqual(facts.step, s.openRead)
-        XCTAssertTrue(facts.stretchDone)
-        XCTAssertEqual(facts.read, 12)
-        facts = try resumeFacts(saved: s.logChip)           // the sheet is closed -> reopen Read
-        XCTAssertEqual(facts.step, s.openRead)
-        XCTAssertEqual(facts.read, 12)
-        facts = try resumeFacts(saved: s.undoStrip)         // Read already 22/20, sheet closed -> hold Tidy desk
-        XCTAssertEqual(facts.step, s.holdTidy)
-        XCTAssertEqual(facts.read, 22)
-        XCTAssertFalse(facts.tidyDone)
-        facts = try resumeFacts(saved: s.finale)            // the Bingo already happened
-        XCTAssertEqual(facts.step, s.finale)
-        XCTAssertTrue(facts.tidyDone)
-        facts = try resumeFacts(saved: s.swapSquare)        // the Edit panel is not open
-        XCTAssertEqual(facts.step, s.enterEdit)
-        XCTAssertFalse(facts.stretchDone)
-        facts = try resumeFacts(saved: s.saveEdit)          // the swap is lost with the panel
-        XCTAssertEqual(facts.step, s.enterEdit)
-        XCTAssertFalse(facts.stretchDone)
+    func test_typedCache_isScopedToTheUserAndInertWithoutOne() {
+        let suite = UserDefaults(suiteName: "tutorial-typed-cache-test")!
+        suite.removePersistentDomain(forName: "tutorial-typed-cache-test")
+        var a = TutorialTypedCache(userId: "a"); a.defaults = suite
+        var b = TutorialTypedCache(userId: "b"); b.defaults = suite
+        var none = TutorialTypedCache(userId: nil); none.defaults = suite
+        a.save(.createTask, ["verb": "Walk"])
+        XCTAssertEqual(a.load(.createTask), ["verb": "Walk"])
+        XCTAssertEqual(b.load(.createTask), [:], "another user never sees it")
+        none.save(.createTask, ["verb": "X"])
+        XCTAssertEqual(none.load(.createTask), [:], "a preview coordinator has no cache")
+        a.clear(.createTask)
+        XCTAssertEqual(a.load(.createTask), [:])
     }
 
-    func test_lessonOneAndTwoReopenAtStepOneWithTheResumedTag() throws {
-        for lesson in [TutorialLessonID.createTask, .createBoard] {
-            var progress = TutorialProgress.empty
-            progress.set(lesson, .inProgress(step: 3))
-            let (coach, _) = try makeCoordinator(progress: progress)
-            XCTAssertTrue(coach.start(lesson))
-            XCTAssertEqual(coach.session?.step, 0)
-            XCTAssertEqual(coach.session?.resumed, true)
-        }
+    func test_previewCoordinator_runsWithoutADatabase() {
+        let coach = TutorialCoordinator.preview()
+        coach.start(.createTask)
+        playCreateTask(coach)
+        XCTAssertEqual(coach.session?.phase, .complete, "a preview coordinator skips the writes and still completes")
+        XCTAssertEqual(coach.progress.state(of: .createTask), .done)
     }
 
-    // MARK: - Finale lights every incomplete square
+    // MARK: - Catalog
 
-    func test_finaleLightsEveryIncompleteSquareWithTheRealRemainingCount() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        reachHold(coach)
-        act(coach, .bingoMomentClosed)
-        XCTAssertEqual(coach.session?.step, TutorialCatalog.CompleteStep.finale)
-        XCTAssertEqual(coach.currentText, "Three left. Tap each to complete it.", "static fallback before the board reports")
-        coach.reportIncomplete(slots: [0, 1, 6, 8])
-        XCTAssertEqual(coach.session?.litAnchors, [.square(0), .square(1), .square(6), .square(8)], "a square the user undid is lit too")
-        XCTAssertEqual(coach.currentText, "Four left. Tap each to complete it.")
-        coach.reportIncomplete(slots: [1, 6])
-        XCTAssertEqual(coach.currentText, "Two left. Tap each to complete it.")
-        coach.reportIncomplete(slots: [6])
-        XCTAssertEqual(coach.currentText, "One left. Tap it to complete it.")
-    }
-
-    /// Undo (the toast, the sheet strip) is usable throughout the lesson, so the
-    /// finale must reach the Greenlog even from an un-done square.
-    func test_undoThenFinaleStillReachesTheGreenlog() throws {
-        let sandbox = try AppDatabase.seedTutorialSandbox(lesson: .completeBoard, user: makeUser())
-        let db = sandbox.database
-        let boardId = try XCTUnwrap(sandbox.sampleBoardId)
-        let vm = BoardPlayViewModel(boardId: boardId, userId: userId, database: db)
-        vm.reload()
-        func wait(_ p: () -> Bool) { let d = Date().addingTimeInterval(30); while !p(), Date() < d { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) } }
-        wait { vm.board?.id == boardId && vm.boardTasks.count == 9 && !vm.allTasks.isEmpty }
-        func placement(_ title: String) throws -> (BoardTask, Task) {
-            let task = try XCTUnwrap(vm.allTasks.first { $0.title == title })
-            return (try XCTUnwrap(vm.boardTasks.first { $0.taskId == task.id }), task)
-        }
-        func settle() { wait { !vm.isProcessing } }
-
-        vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
-        let (readBT, read) = try placement("Read 20 pages")
-        vm.handleCountingTap(boardTask: readBT, task: read, amount: 10, persistAsDefault: false); settle()
-        vm.handleNormalTap(boardTask: try placement("Tidy desk").0); settle()
-        // Undo Read (the sheet's Undo strip) and Stretch (the toast's Undo).
-        vm.handleCountingDecrement(boardTask: readBT, task: try placement("Read 20 pages").1, amount: 10, persistAsDefault: false); settle()
-        vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
-        wait { vm.tutorialIncompleteSlots().count >= 5 }
-        let slots = vm.tutorialIncompleteSlots()
-        XCTAssertEqual(Set(slots), [
-            TutorialCatalog.SampleSlot.stretch, TutorialCatalog.SampleSlot.read, TutorialCatalog.SampleSlot.callMom,
-            TutorialCatalog.SampleSlot.journal, TutorialCatalog.SampleSlot.noSugar,
-        ])
-
-        // The finale lights all of them; finishing every one reaches the Greenlog.
-        vm.handleNormalTap(boardTask: try placement("Stretch").0); settle()
-        vm.handleCountingTap(boardTask: readBT, task: try placement("Read 20 pages").1, amount: 8, persistAsDefault: false); settle()
-        vm.handleNormalTap(boardTask: try placement("Call mom").0); settle()
-        vm.handleNormalTap(boardTask: try placement("Journal").0); settle()
-        vm.handleNormalTap(boardTask: try placement("No sugar").0); settle()
-        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: boardId)).completedTasks, 9)
-        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: boardId)).status, .completed)
-        wait { vm.tutorialIncompleteSlots().isEmpty }
-        XCTAssertTrue(vm.tutorialIncompleteSlots().isEmpty)
-    }
-
-    // MARK: - A lit sheet closed early steps back
-
-    func test_sourcesSheetClosedWithoutAPoolLightsTheEntryRowAgain() throws {
-        let (coach, real) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.createBoard))
-        for event in Self.createBoardScript.prefix(3) { act(coach, event) }
-        coach.handle(.sourcesSheetOpened)
-        XCTAssertEqual(coach.session?.awaitingNext, true, "the sheet is up, the done line holds")
-        coach.handle(.sourcesSheetClosedEmpty)
-        XCTAssertEqual(coach.session?.step, 3, "swiped away before Next: back to Add from a pool or board")
-        XCTAssertEqual(coach.session?.awaitingNext, false)
-        act(coach, .sourcesSheetOpened)
-        XCTAssertEqual(coach.session?.step, 4, "the pool rows")
-        coach.handle(.sourcesSheetClosedEmpty)
-        XCTAssertEqual(coach.session?.step, 3, "back to Add from a pool or board")
-        XCTAssertEqual(try savedProgress(real).state(of: .createBoard), .inProgress(step: 4), "the saved place is never lowered")
-        act(coach, .sourcesSheetOpened)
-        coach.reportPool(summary: "Fitness fills eight squares")
-        act(coach, .poolsPicked)
-        XCTAssertEqual(coach.session?.step, 5)
-        coach.handle(.sourcesSheetClosedEmpty)
-        XCTAssertEqual(coach.session?.step, 5, "means nothing once the pool is in")
-    }
-
-    func test_squareSheetSwipedAwayStepsBackToReadOrOnToTheHoldStep() throws {
-        let s = TutorialCatalog.CompleteStep.self
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        reachRead(coach)
-        coach.handle(.countingSheetOpened)
-        XCTAssertEqual(coach.session?.awaitingNext, true)
-        coach.handle(.squareSheetClosed)
-        XCTAssertEqual(coach.session?.step, s.openRead, "the sheet went before Next: tap Read again")
-        XCTAssertEqual(coach.session?.awaitingNext, false)
-        act(coach, .countingSheetOpened)
-        XCTAssertEqual(coach.session?.step, s.logChip, "the chips")
-        coach.handle(.squareSheetClosed)
-        XCTAssertEqual(coach.session?.step, s.openRead, "tap Read again")
-        act(coach, .countingSheetOpened)
-        coach.handle(.countLogged)
-        XCTAssertEqual(coach.session?.step, s.undoStrip, "the Undo strip (read-only)")
-        coach.handle(.squareSheetClosed)
-        XCTAssertEqual(coach.session?.step, s.holdTidy, "nothing left to close: hold Tidy desk")
-        coach.handle(.squareSheetClosed)
-        XCTAssertEqual(coach.session?.step, s.holdTidy, "ignored elsewhere")
-    }
-
-    func test_undoOnTheStripStepsBackToTheChips() throws {
-        let s = TutorialCatalog.CompleteStep.self
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        reachRead(coach)
-        act(coach, .countingSheetOpened)
-        coach.handle(.countLogged)
-        XCTAssertEqual(coach.session?.step, s.undoStrip, "the Undo strip")
-        coach.handle(.squareLogUndone)
-        XCTAssertEqual(coach.session?.step, s.logChip, "log with a chip again")
-        coach.handle(.squareLogUndone)
-        XCTAssertEqual(coach.session?.step, s.logChip, "ignored elsewhere")
-    }
-
-    // MARK: - Square anchors follow their title
-
-    /// Edit lets the person drag squares around: a `.square` anchor names its
-    /// square by seeded slot and resolves to wherever that title sits now.
-    func test_squareAnchorsFollowTheTitleTheBoardReports() throws {
-        let (coach, _) = try makeCoordinator()
-        XCTAssertTrue(coach.start(.completeBoard))
-        act(coach, .editEntered)
-        act(coach, .squareSwapped)
-        act(coach, .editSaved)
-        XCTAssertEqual(coach.session?.litAnchors, [.square(TutorialCatalog.SampleSlot.stretch)], "the seeded slot before the board reports")
-        // Journal was dragged onto Read's slot (and Read onto Journal's).
-        var slots: [String: Int] = [:]
-        for (index, square) in AppDatabase.tutorialSampleWeekGrid.enumerated() { slots[square.title] = index }
-        slots["Journal"] = TutorialCatalog.SampleSlot.read
-        slots["Read 20 pages"] = TutorialCatalog.SampleSlot.journal
-        coach.reportSlots(byTitle: slots)
-        XCTAssertEqual(coach.session?.litAnchors, [.square(TutorialCatalog.SampleSlot.stretch)], "Stretch did not move")
-        coach.handle(.simpleSquareDone)
-        coach.next()
-        XCTAssertEqual(coach.session?.litAnchors, [.square(TutorialCatalog.SampleSlot.journal)], "Read is lit where it sits now")
+    func test_catalog_stepCountsAndBarLabels() {
+        XCTAssertEqual(TutorialCatalog.info(for: .createTask).steps.count, 7)
+        XCTAssertEqual(TutorialCatalog.info(for: .createBoard).steps.count, 9)
+        XCTAssertEqual(TutorialCatalog.info(for: .completeBoard).steps.count, 12)
+        XCTAssertEqual(TutorialCatalog.info(for: .createTask).barLabel, "Lesson 1 · Create a task")
+        XCTAssertEqual(TutorialCatalog.info(for: .completeBoard).barLabel, "Lesson 3 · Complete a board")
+        XCTAssertEqual(TutorialCatalog.info(for: .completeBoard).steps.filter { $0.advance == .next }.count, 2, "two read-only steps")
+        XCTAssertEqual(TutorialCatalog.info(for: .createTask).completeSecondary, .tasks)
+        XCTAssertEqual(TutorialCatalog.info(for: .createBoard).completeSecondary, .create)
+        XCTAssertNil(TutorialCatalog.info(for: .completeBoard).completeSecondary)
     }
 }

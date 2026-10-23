@@ -40,7 +40,7 @@ struct RisoLibrarySheetView: View {
     // Parent-board tasks
     @State private var parentTasksVM = ParentBoardTasksViewModel()
     @State private var parentTasksLoaded = false
-    /// The host's database (the tutorial sandbox inside a lesson).
+    /// The host's database (ROADMAP B3 seam).
     @Environment(\.appDatabase) private var database
 
     private var trimmedQuery: String {

@@ -71,11 +71,6 @@ struct MainTabView: View {
         }
     }
 
-    /// Cross-tab navigation: jump to a specific board. Used by Tasks-tab
-    /// detail Usage section ("tap a board name → go there") and by the
-    /// task-detail sheet over BoardPlayView (board-to-board jump).
-    /// Resets boardsPath to a single entry so the user lands on a clean
-    /// stack — same intent as `onBoardCompleted` from the wizard.
     /// Opens the Getting Started tutorial board (from the home card or the
     /// Profile "Getting started" row). Lands on the Boards tab.
     private func openTutorial() {
@@ -84,6 +79,11 @@ struct MainTabView: View {
         boardsPath.append(TutorialRoute())
     }
 
+    /// Cross-tab navigation: jump to a specific board. Used by Tasks-tab
+    /// detail Usage section ("tap a board name → go there") and by the
+    /// task-detail sheet over BoardPlayView (board-to-board jump).
+    /// Resets boardsPath to a single entry so the user lands on a clean
+    /// stack — same intent as `onBoardCompleted` from the wizard.
     private func openBoard(_ boardId: String) {
         boardsPath = NavigationPath()
         pushBoard(boardId)
@@ -175,6 +175,11 @@ struct MainTabView: View {
                         onStartFirstBoard: {
                             boardsPath = NavigationPath()
                             selectedTab = 2
+                        },
+                        // Lesson 1's "Open Tasks": the real Tasks tab.
+                        onOpenTasks: {
+                            boardsPath = NavigationPath()
+                            selectedTab = 1
                         }
                     )
                 }

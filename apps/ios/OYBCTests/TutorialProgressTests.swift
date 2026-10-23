@@ -230,7 +230,7 @@ final class TutorialProgressTests: XCTestCase {
         var progress = TutorialProgress.empty
         progress.set(.createTask, .done)
         XCTAssertEqual(progress.statusLine(activeLesson: nil, activeStep: nil), "8 to go")
-        XCTAssertEqual(progress.statusLine(activeLesson: .createBoard, activeStep: 1), "Create a board · step 2 of 12")
+        XCTAssertEqual(progress.statusLine(activeLesson: .createBoard, activeStep: 1), "Create a board · step 2 of 9")
         progress.set(.createBoard, .done)
         progress.set(.completeBoard, .done)
         XCTAssertEqual(progress.statusLine(activeLesson: nil, activeStep: nil), "Bingo · middle row")
@@ -244,9 +244,9 @@ final class TutorialProgressTests: XCTestCase {
             "Create a task", "Create a board", "Complete a board",
             "Shared counters", "Bigger windows", "Achievements",
         ])
-        XCTAssertEqual(TutorialCatalog.info(for: .createTask).steps.count, 5)
-        XCTAssertEqual(TutorialCatalog.info(for: .createBoard).steps.count, 12)
-        XCTAssertEqual(TutorialCatalog.info(for: .completeBoard).steps.count, 10)
+        XCTAssertEqual(TutorialCatalog.info(for: .createTask).steps.count, 7)
+        XCTAssertEqual(TutorialCatalog.info(for: .createBoard).steps.count, 9)
+        XCTAssertEqual(TutorialCatalog.info(for: .completeBoard).steps.count, 12)
         XCTAssertTrue(TutorialCatalog.lessons.filter { !$0.isFree }.allSatisfy { $0.steps.isEmpty && $0.glyph == nil })
     }
 }

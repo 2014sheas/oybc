@@ -49,11 +49,6 @@ struct BoardEditPresenter: ViewModifier {
     @State private var editSaveError: String? = nil
     @State private var boardClosedMessage: String? = nil
 
-    // Getting Started hooks — inert outside a lesson. A lesson's tap-menu
-    // offers "Replace task…" alone; the other items stay visible but off.
-    @Environment(\.tutorialCoach) private var tutorialCoach
-    @Environment(\.tutorialSignals) private var tutorialSignals
-
     // MARK: - Title
 
     private var menuTitle: String {
@@ -95,7 +90,6 @@ struct BoardEditPresenter: ViewModifier {
                             viewModel.handleEditAdd(cellKey: target.cellKey, taskId: taskId, pending: pending, placement: placement)
                         case .replace:
                             viewModel.handleEditReplace(cellKey: target.cellKey, taskId: taskId, pending: pending, placement: placement)
-                            tutorialCoach?.handle(.squareSwapped)
                         }
                         pickerTarget = nil
                     },
@@ -161,32 +155,25 @@ struct BoardEditPresenter: ViewModifier {
                     taskEditTarget = EditModeTaskTarget(id: target.cellKey, task: task)
                 }
             }
-            .disabled(tutorialSignals.active)
             Button(viewModel.isEditCellLocked(cellKey: target.cellKey) ? "Unlock" : "Lock in place") {
                 viewModel.handleEditToggleLock(cellKey: target.cellKey)
             }
-            .disabled(tutorialSignals.active)
             Button("Remove from board", role: .destructive) {
                 viewModel.handleEditRemove(cellKey: target.cellKey)
             }
-            .disabled(tutorialSignals.active)
             // The positional center can ALSO free itself even while occupied.
             if target.isCenter {
                 Button("Make it a free space") { viewModel.handleEditCenterFree() }
-                    .disabled(tutorialSignals.active)
             }
         } else if target.isCenter {
             if viewModel.editCenterType == .free {
                 Button("Make it a task square") { viewModel.handleEditCenterTask() }
-                    .disabled(tutorialSignals.active)
             } else {
                 // Empty NONE center (OQ5).
                 Button("Add a task…") {
                     pickerTarget = SquarePickerRouteTarget(cellKey: target.cellKey, mode: .add)
                 }
-                .disabled(tutorialSignals.active)
                 Button("Make it a free space") { viewModel.handleEditCenterFree() }
-                    .disabled(tutorialSignals.active)
             }
         }
         Button("Cancel", role: .cancel) {}
@@ -276,7 +263,6 @@ struct BoardEditPresenter: ViewModifier {
                 },
                 onCancel: { taskEditTarget = nil }
             )
-            .tutorialExitGuard()
     }
 
     /// The board's window for a counter picked as a compound sub-task.

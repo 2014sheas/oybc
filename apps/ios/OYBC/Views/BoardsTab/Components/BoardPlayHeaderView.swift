@@ -89,7 +89,6 @@ struct BoardPlayHeaderView: View {
                         action: onEdit
                     )
                     .accessibilityLabel("Edit board")
-                    .tutorialAnchor(.editButton)
                 }
             }
             .padding(.top, showEdit ? 22 : 24)

@@ -50,6 +50,9 @@ struct RisoMomentOverlay: View {
     /// The tutorial Greenlog (Getting started): no Share; "Start my first board"
     /// and a quiet "Back to the tutorial board" replace the board buttons.
     var tutorialButtons: Bool = false
+    /// A lesson's moment: Share is shown but disabled (the sample board is not
+    /// the person's; there is nothing to share).
+    var shareDisabled: Bool = false
     var onShare: () -> Void = {}
     /// Dismisses back to the play board.
     var onBack: () -> Void = {}
@@ -242,10 +245,14 @@ struct RisoMomentOverlay: View {
             } else if kind == .bingo {
                 RisoButton(title: "Share this bingo", kind: .gold, systemImage: "square.and.arrow.up",
                            fullWidth: true, large: true, action: onShare)
+                    .opacity(shareDisabled ? 0.45 : 1)
+                    .disabled(shareDisabled)
                 RisoButton(title: "Back to board", kind: .neutral, fullWidth: true, large: true, action: onBack)
             } else {
                 RisoButton(title: "Share my board", kind: .primary, systemImage: "square.and.arrow.up",
                            fullWidth: true, large: true, action: onShare)
+                    .opacity(shareDisabled ? 0.45 : 1)
+                    .disabled(shareDisabled)
                 RisoButton(title: "Start a new board", kind: .neutral, fullWidth: true, large: true, action: onNewBoard)
                 // Quiet exit (tap-to-close is gone): plain text, no border / fill.
                 Button(action: onBack) {

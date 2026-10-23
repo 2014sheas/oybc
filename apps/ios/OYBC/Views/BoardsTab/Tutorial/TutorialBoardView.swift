@@ -28,7 +28,7 @@ struct TutorialBoardContent: View {
             : "Each square is a lesson. Finish the middle row for a Bingo, all nine for a Greenlog."
     }
 
-    /// "Create a task · step 2 of 5" for the lesson left mid-way, else the generic line.
+    /// "Create a task · step 2 of 7" for the lesson left mid-way, else the generic line.
     private var statusLine: String {
         for id in TutorialLessonID.middleRow {
             if case .inProgress(let step) = progress.state(of: id) {
@@ -143,18 +143,26 @@ struct TutorialBoardContent: View {
 
 // MARK: - Container
 
-/// The Getting Started tutorial board, pushed on the Boards stack (replaces the
-/// 8-lesson `TutorialBoardView`). A tap on a free square opens that lesson in a
-/// full-screen stage over the real screens; a Pro square opens its stub sheet.
+/// The Getting Started tutorial board, pushed on the Boards stack. A tap on a
+/// free square opens its start sheet (or, mid-lesson, resumes straight into
+/// the stage); a Pro square opens its stub sheet. The stage is a full-screen
+/// cover over facsimile screens; where it lands on close comes back through
+/// `TutorialCoordinator.justCompleted`.
 struct TutorialBoardView: View {
     @EnvironmentObject private var coach: TutorialCoordinator
 
     let onBack: () -> Void
     /// "Go to my boards" — leave the tutorial for the user's Boards tab.
     let onGoToBoards: () -> Void
-    /// The tutorial Greenlog's "Start my first board" — open the Create tab.
+    /// The tutorial Greenlog's "Start my first board" and the lessons' "Open
+    /// Create" / "Start a new board": open the Create tab.
     let onStartFirstBoard: () -> Void
+    /// Lesson 1's "Open Tasks": switch to the real Tasks tab.
+    var onOpenTasks: () -> Void = {}
 
+    @State private var startLesson: TutorialLessonID?
+    /// Start was tapped: the stage opens once the start sheet is gone.
+    @State private var pendingStart: TutorialLessonID?
     @State private var stageLesson: TutorialLessonID?
     @State private var proLesson: TutorialLessonID?
     @State private var middleRowWasDone = false
@@ -203,6 +211,18 @@ struct TutorialBoardView: View {
             }
         }
         .navigationBarHidden(true)
+        .sheet(item: $startLesson, onDismiss: {
+            guard let lesson = pendingStart else { return }
+            pendingStart = nil
+            if coach.start(lesson) { stageLesson = lesson }
+        }) { lesson in
+            TutorialStartSheet(
+                info: TutorialCatalog.info(for: lesson),
+                onStart: { pendingStart = lesson; startLesson = nil },
+                onNotNow: { startLesson = nil }
+            )
+            .presentationDetents([.medium])
+        }
         .fullScreenCover(item: $stageLesson, onDismiss: stageDismissed) { lesson in
             TutorialStageView(lesson: lesson)
         }
@@ -223,14 +243,20 @@ struct TutorialBoardView: View {
         }
     }
 
-    /// A tap on a square: free lessons open their stage; Pro squares the stub.
+    /// A tap on a square: a Pro square opens the stub; an in-progress free
+    /// lesson resumes straight into its stage; any other free lesson shows
+    /// its start sheet first.
     private func open(_ id: TutorialLessonID) {
         guard id.isFree else {
             proLesson = id
             return
         }
         middleRowWasDone = coach.progress.middleRowDone
-        if coach.start(id) { stageLesson = id }
+        if case .inProgress = coach.progress.state(of: id) {
+            if coach.start(id) { stageLesson = id }
+        } else {
+            startLesson = id
+        }
     }
 
     /// The paywall entry. No entitlement or paywall exists on dev (monetization
@@ -238,15 +264,26 @@ struct TutorialBoardView: View {
     private func seePro() {}
 
     /// Back from a lesson: play the square's pop, then the middle-row Bingo toast
-    /// or the all-nine Greenlog when those just completed.
+    /// or the all-nine Greenlog when those just completed — or hand off to the
+    /// tab the lesson's exit named.
     private func stageDismissed() {
         // Whatever dismissed the cover, a still-running lesson is left (saving its
-        // place) and the session and sandbox are torn down only now.
+        // place) and the session is torn down only now.
         coach.stageDidDismiss()
         guard let finished = coach.justCompleted else { return }
         coach.consumeJustCompleted()
-        popLesson = finished
+        popLesson = finished.lesson
         popToken += 1
+        switch finished.exit {
+        case .tasks:
+            onOpenTasks()
+            return
+        case .create:
+            onStartFirstBoard()
+            return
+        case .board:
+            break
+        }
         if coach.progress.isComplete {
             withAnimation(.easeIn(duration: 0.3)) { showGreenlog = true }
         } else if coach.progress.middleRowDone && !middleRowWasDone {

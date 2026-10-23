@@ -112,7 +112,7 @@ struct RisoCompoundFieldsView: View {
 
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
-    /// The host's database (the tutorial sandbox inside a lesson).
+    /// The host's database (ROADMAP B3 seam).
     @Environment(\.appDatabase) private var database
 
     /// Counter Detail's "+ New" preset: the create counts toward this counter.

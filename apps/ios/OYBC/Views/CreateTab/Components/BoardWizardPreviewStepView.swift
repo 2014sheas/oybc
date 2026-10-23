@@ -71,10 +71,6 @@ struct BoardWizardPreviewStepView: View {
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
 
-    /// Getting Started hooks (Shuffle and Rearrange are lesson-2 steps) —
-    /// inert outside a lesson.
-    @Environment(\.tutorialCoach) private var tutorialCoach
-
     /// The arrangement shown in the preview grid AND written to the DB.
     ///
     /// Captured once (seeded on appear, re-seeded when the selection /
@@ -405,7 +401,6 @@ struct BoardWizardPreviewStepView: View {
             // else: empty slot → nil (Array(repeating: nil, …) default)
         }
         placement = newPlacement
-        tutorialCoach?.handle(.previewRearranged)
     }
 
     private var taskNames: [String] {
@@ -521,7 +516,6 @@ struct BoardWizardPreviewStepView: View {
                             windowedIsCompleted: { previewIsCompleted($0) },
                             windowedCount: { previewCount($0) }
                         )
-                        .tutorialAnchor(.previewGrid, radius: Riso.cellRadius)
                     }
 
                     // Board Sources P3 — the old 3-row Repeats/Size/Pool
@@ -715,7 +709,6 @@ struct BoardWizardPreviewStepView: View {
                 ],
                 selection: $arrangeSubMode
             )
-            .tutorialAnchor(.rearrangeToggle)
 
             if canShuffle {
                 Button {
@@ -725,7 +718,6 @@ struct BoardWizardPreviewStepView: View {
                     // placement from the PREVIOUS nonce (the @State write is
                     // not yet visible) and then immediately rebuild it.
                     shuffleNonce &+= 1
-                    tutorialCoach?.handle(.previewShuffled)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "shuffle")
@@ -742,7 +734,6 @@ struct BoardWizardPreviewStepView: View {
                 .buttonStyle(.plain)
                 .disabled(isCreating)
                 .accessibilityLabel("Shuffle board layout")
-                .tutorialAnchor(.shuffleButton)
             }
         }
     }
@@ -791,7 +782,6 @@ private extension BoardWizardPreviewStepView {
                     performCreation()
                 }
                 .disabled(isCreating || isBelowCoreFloor)
-                .tutorialAnchor(.activateBoard)
             }
         }
         .padding(.horizontal, Riso.gutter)

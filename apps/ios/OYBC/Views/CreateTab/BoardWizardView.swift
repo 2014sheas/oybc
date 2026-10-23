@@ -19,8 +19,7 @@ struct BoardWizardView: View {
     let userId: String
     let preferences: UserPreferences
     /// Injected database (defaults to the app singleton) — the wizard view
-    /// model, the task library and every write go through it. The Getting
-    /// Started "Create a board" lesson passes its throwaway sandbox.
+    /// model, the task library and every write go through it.
     var database: AppDatabase = .shared
     let draft: (board: Board, boardTasks: [BoardTask])?
     let prefilledRecurringTimeframe: Timeframe?
@@ -42,7 +41,6 @@ struct BoardWizardView: View {
 
     @State private var wizard: BoardWizardViewModel
     @State private var library: TaskLibraryViewModel
-    @Environment(\.tutorialCoach) private var tutorialCoach
     @State private var showCancelDialog: Bool = false
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
@@ -69,7 +67,6 @@ struct BoardWizardView: View {
         userId: String,
         preferences: UserPreferences,
         database: AppDatabase = .shared,
-        prefillName: String? = nil,
         draft: (board: Board, boardTasks: [BoardTask])? = nil,
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
@@ -94,7 +91,7 @@ struct BoardWizardView: View {
         self.onComplete = onComplete
         self.onTemplateComplete = onTemplateComplete
         self.onDeleteDraft = onDeleteDraft
-        let viewModel = BoardWizardViewModel(
+        _wizard = State(initialValue: BoardWizardViewModel(
             preferences: preferences,
             initialStep: initialStep,
             draft: draft,
@@ -104,9 +101,7 @@ struct BoardWizardView: View {
             startRecurring: startRecurring,
             userId: userId,
             database: database
-        )
-        if let prefillName { viewModel.name = prefillName }
-        _wizard = State(initialValue: viewModel)
+        ))
         _library = State(initialValue: TaskLibraryViewModel(database: database))
     }
 
@@ -394,7 +389,6 @@ struct BoardWizardView: View {
                     ? { if let id = wizard.draftBoardId { onDeleteDraft?(id) } }
                     : nil
             )
-            .tutorialExitGuard()
             .presentationDetents([.medium])
         }
         .alert(
@@ -425,11 +419,7 @@ struct BoardWizardView: View {
             BoardWizardSetupStepView(
                 controller: wizard,
                 onCancel: handleCancelRequested,
-                onNext: {
-                    let before = wizard.currentStep
-                    wizard.goNext()
-                    if wizard.currentStep != before { tutorialCoach?.handle(.setupNext) }
-                },
+                onNext: { wizard.goNext() },
                 onDeleteRepeatingBoard: editingTemplate != nil ? { showDeleteConfirm = true } : nil
             )
         case 2:
@@ -475,11 +465,7 @@ struct BoardWizardView: View {
                 onRestampPlacementParams: { wizard.restampPlacementParams(to: $0) },
                 pendingTasks: wizard.pendingTasks,
                 onBack: { wizard.goBack() },
-                onNext: {
-                    let before = wizard.currentStep
-                    wizard.goNext()
-                    if wizard.currentStep != before { tutorialCoach?.handle(.tasksStepNext) }
-                },
+                onNext: { wizard.goNext() },
                 pools: pools,
                 sources: wizard.sources,
                 supplyInfoBySourceId: wizard.supplyInfoBySourceId,
@@ -528,7 +514,6 @@ struct BoardWizardView: View {
                 onBack: { wizard.goBack() },
                 onComplete: { boardId, status in
                     onComplete(boardId, status.rawValue)
-                    if status == .active { tutorialCoach?.handle(.boardActivated) }
                 },
                 onTemplateComplete: onTemplateComplete,
                 pools: pools

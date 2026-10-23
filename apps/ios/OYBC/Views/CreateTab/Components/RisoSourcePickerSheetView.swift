@@ -25,12 +25,8 @@ struct RisoSourcePickerSheetView: View {
     let pulledSourceIds: Set<String>
     let onTogglePool: (Pool) -> Void
     let onToggleBoard: (String) -> Void
-    /// One pool at a time (a lesson): once a pool is pulled, the other rows
-    /// dim and ignore taps until it is un-pulled.
-    var singlePick: Bool = false
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.tutorialSignals) private var tutorialSignals
     @State private var query: String = ""
 
     private var trimmedQuery: String {
@@ -62,12 +58,9 @@ struct RisoSourcePickerSheetView: View {
                     VStack(alignment: .leading, spacing: 7) {
                         if !matchingPools.isEmpty {
                             sectionKicker("POOLS")
-                            VStack(alignment: .leading, spacing: 7) {
-                                ForEach(matchingPools, id: \.id) { pool in
-                                    poolRow(pool)
-                                }
+                            ForEach(matchingPools, id: \.id) { pool in
+                                poolRow(pool)
                             }
-                            .tutorialAnchor(.sourcePoolRows)
                         }
                         if !matchingBoards.isEmpty {
                             sectionKicker("BOARDS")
@@ -85,8 +78,6 @@ struct RisoSourcePickerSheetView: View {
         .padding(.top, 10)
         .padding(.horizontal, 20)
         .background(Color.risoPaper.ignoresSafeArea())
-        .tutorialCoachLayer()
-        .interactiveDismissDisabled(tutorialSignals.active)
         .presentationDetents([.fraction(0.76)])
     }
 
@@ -105,7 +96,6 @@ struct RisoSourcePickerSheetView: View {
                 .foregroundStyle(Color.risoInk)
             Spacer()
             RisoButton(title: "Done", kind: .primary, small: true) { dismiss() }
-                .tutorialAnchor(.sourcesDone)
         }
     }
 
@@ -152,17 +142,14 @@ struct RisoSourcePickerSheetView: View {
     // MARK: - Rows
 
     private func poolRow(_ pool: Pool) -> some View {
-        let isOn = pulledSourceIds.contains(pool.id)
-        let lockedOut = singlePick && !isOn && !pulledSourceIds.isEmpty
-        return sourceRow(
+        sourceRow(
             letter: "P",
             letterFill: .risoInk,
             letterForeground: .risoPaper,
             name: pool.name,
             subtitle: "\(pool.taskIds.count) task\(pool.taskIds.count == 1 ? "" : "s")",
-            isOn: isOn
+            isOn: pulledSourceIds.contains(pool.id)
         ) { onTogglePool(pool) }
-        .tutorialDimmed(lockedOut)
     }
 
     private func boardRow(_ entry: BoardEntry) -> some View {

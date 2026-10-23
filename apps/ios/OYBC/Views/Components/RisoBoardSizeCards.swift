@@ -14,22 +14,14 @@ import SwiftUI
 struct RisoBoardSizeCards: View {
     let selectedSize: Int
     var sizes: [Int] = [3, 4, 5]
-    /// Sizes that can be picked; the rest render dimmed and inert (the Getting
-    /// Started lesson keeps the board at the size its supplied pools fill).
-    /// nil (default) enables every size.
-    var enabledSizes: Set<Int>? = nil
     let onSelect: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             ForEach(sizes, id: \.self) { n in
-                let enabled = enabledSizes?.contains(n) ?? true
                 RisoBoardSizeCard(n: n, isSelected: selectedSize == n) {
                     onSelect(n)
                 }
-                .opacity(enabled ? 1 : 0.45)
-                .allowsHitTesting(enabled)
-                .disabled(!enabled)
             }
         }
     }

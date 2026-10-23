@@ -77,7 +77,6 @@ struct TasksTabView: View {
         _vm = State(initialValue: TasksTabViewModel(database: database))
     }
     @State private var showNewTaskSheet = false
-    @Environment(\.tutorialCoach) private var tutorialCoach
     @State private var expandedCompoundIds: Set<String> = []
 
     private struct PendingTaskDeletion: Identifiable {
@@ -516,13 +515,10 @@ struct TasksTabView: View {
             Spacer(minLength: 12)
             RisoIconButton(systemImage: "plus") {
                 switch segment.plusAction {
-                case .newTask:
-                    showNewTaskSheet = true
-                    tutorialCoach?.handle(.tasksPlusTapped)
+                case .newTask: showNewTaskSheet = true
                 case .newPool: path.append(PoolEditorRoute.new)
                 }
             }
-            .tutorialAnchor(.tasksPlus)
             .accessibilityLabel(segment.plusAction.accessibilityLabel)
         }
     }
