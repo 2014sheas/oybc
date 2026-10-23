@@ -80,16 +80,17 @@ extension BoardPlayViewModel {
     /// live play grid correctly reads windowed
     /// (docs/WINDOWED_COMPLETION.md §Task caches).
     ///
-    /// Event-owning primitives (normal / plain-source counting) resolve
-    /// against the board's window via `windowedState(forTaskId:)`; linked
-    /// counters via `resolveLinkedCounterDisplay` (a window-stamped row's root
-    /// sum in its own window — the kernel's rule; a hub-linked row's latch).
-    /// Compound and achievement tasks keep reading the lifetime cache — these
-    /// preview surfaces have no compound/achievement evaluation context.
+    /// The same reads the play grid's `buildPlacementRender` makes, over the
+    /// task the grid was HANDED: linked counters via `resolveLinkedCounterDisplay`,
+    /// a compound through `CompoundEvaluation` in this window with its placement's
+    /// `childTargets`, an achievement from the kernel cell, every other primitive
+    /// through `windowedState(of:)` against the goal on that task — which is the
+    /// placement's goal, since `editDraftTaskMap` hands over the placement-adjusted
+    /// row (TASK_WINDOW_REWORK slice 2a). Re-reading the library row by id here
+    /// scored a square placed at 1.4 against its library goal (owner report
+    /// 2026-10-23: a gold 2.3/1.4 pill with no done fill).
     ///
-    /// - Parameter task: The task to resolve. Title/type may carry staged
-    ///   `editTaskOverrides`, but `id`/`isCompleted` always reflect the real
-    ///   database values, so the windowed lookup is always against the true task.
+    /// - Parameter task: The task to resolve, as the edit grid renders it.
     /// - Returns: Whether the square previews as complete.
     func windowedIsCompleted(for task: Task) -> Bool {
         if task.sharedCounterId != nil {
@@ -98,8 +99,21 @@ extension BoardPlayViewModel {
                 window: board.map(LinkedCounterWindow.init(board:))
             ).isCompleted
         }
-        guard isEventOwningTask(task) else { return task.isCompleted }
-        return windowedState(forTaskId: task.id).isCompleted
+        // Placement repair guarantees at most one row per task on a board.
+        let placement = boardTasks.first { $0.taskId == task.id }
+        switch task.type {
+        case .compound:
+            return CompoundEvaluation.evaluate(
+                compound: task, childrenByCompound: compoundChildrenByCompound, taskById: taskMap,
+                windowContext: compoundWindowContext, childTargets: placement?.childTargets
+            )
+        case .achievement:
+            guard let placement else { return task.isCompleted }
+            return kernelCellStates[placement.id]?.isCompleted ?? false
+        case .normal, .counting:
+            guard isEventOwningTask(task) else { return task.isCompleted }
+            return windowedState(of: task).isCompleted
+        }
     }
 
     /// Whether a compound's CHILD reads complete in this board's window — the

@@ -1954,6 +1954,82 @@ final class BoardPlayViewModelTests: XCTestCase {
         )
     }
 
+    /// TASK_WINDOW_REWORK slice 2a: the Board Edit grid reads the PLACEMENT-ADJUSTED
+    /// task (`editDraftTaskMap` applies `targetOverride`), so the done read must
+    /// score the goal it was handed, not re-read the library row by id. Owner
+    /// report 2026-10-23: "Run 1.4 miles" at 2.3 drew a gold pill in Edit but no
+    /// done fill.
+    func test_windowedIsCompleted_placementGoalOverride_scoresThePlacementGoal() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeCountingTask("c1", maxCount: 10))
+        try db.saveBoard(makeBoard(id: "b1"))
+        var bt = makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0)
+        bt.targetOverride = 2
+        bt.targetKind = .discrete
+        try db.saveBoardTask(bt)
+        try db.write { db in
+            try TaskEvent(
+                id: "e-c1", userId: "u1", taskId: "c1", kind: .increment, delta: 3,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
+
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && vm.allTasks.contains { $0.id == "c1" } })
+
+        let placement = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c1" })
+        let adjusted = try XCTUnwrap(vm.placedTask(placement))
+        XCTAssertEqual(adjusted.maxCount, 2, "the grid reads the placement goal")
+        XCTAssertTrue(vm.windowedIsCompleted(for: adjusted), "3 logged against a placement goal of 2 is done")
+        XCTAssertEqual(
+            vm.windowedIsCompleted(for: adjusted), vm.buildPlacementRender(placement).isCompleted,
+            "edit-preview read and live-grid read must resolve identically"
+        )
+    }
+
+    /// A compound square in Edit evaluates its children in the board window
+    /// (with the placement's `childTargets`), the same as the play grid — never
+    /// the lifetime latch, which a compound never carries.
+    func test_windowedIsCompleted_compound_evaluatesChildrenInWindowNotTheLatch() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var compound = makeTask("comp")
+        compound.type = .compound
+        compound.operatorType = .and
+        try db.saveTask(compound)
+        try db.saveTask(makeCountingTask("child", maxCount: 10))
+        try db.write { db in
+            try CompoundChild(
+                id: "cc-1", compoundTaskId: "comp", childTaskId: "child", childIndex: 0,
+                createdAt: "2026-06-21T00:00:00.000", updatedAt: "2026-06-21T00:00:00.000", version: 1, isDeleted: false
+            ).save(db)
+            try TaskEvent(
+                id: "e-child", userId: "u1", taskId: "child", kind: .increment, delta: 3,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
+        try db.saveBoard(makeBoard(id: "b1"))
+        var bt = makeBoardTask(id: "bt-comp", boardId: "b1", taskId: "comp", row: 1, col: 1)
+        bt.childTargets = [PlacementChildTarget(childId: "child", target: 2)]
+        try db.saveBoardTask(bt)
+
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && vm.allTasks.contains { $0.id == "comp" } })
+
+        let liveCompound = try XCTUnwrap(vm.taskMap["comp"])
+        XCTAssertFalse(liveCompound.isCompleted, "a compound never carries the lifetime latch")
+        XCTAssertTrue(vm.windowedIsCompleted(for: liveCompound), "the child met its placement goal in the window")
+        let placement = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "comp" })
+        XCTAssertEqual(vm.windowedIsCompleted(for: liveCompound), vm.buildPlacementRender(placement).isCompleted)
+    }
+
     // MARK: - Item 3 (Board-integrity PR-4): single-transaction Save atomicity
 
     /// Board-integrity PR-4 (Item 3, docs/BOARD_INTEGRITY.md): `handleEditSave`
