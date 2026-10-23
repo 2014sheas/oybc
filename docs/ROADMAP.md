@@ -1,6 +1,6 @@
 # OYBC Roadmap & Hardening Plan
 
-Canonical output of the full project review run on **2026-07-06** (concept / architecture / workflow / CI-CD survey, end-user feature review, and deep software-architecture dive), plus **Track G** integrating the Play OYBC transition plan from the same-day sibling session (canonical: [`docs/PLAY_TRANSITION.md`](PLAY_TRANSITION.md)). Every finding that warrants action lives here as a defined workstream.
+Canonical output of the full project review run on **2026-07-06** (concept / architecture / workflow / CI-CD survey, end-user feature review, and deep software-architecture dive). Every finding that warrants action lives here as a defined workstream.
 
 **How to use this doc:** pick ONE workstream at a time (per the standard workflow — user-directed, one feature/refactor per branch). Each workstream below is scoped to the level needed to start; the detailed step-by-step implementation plan is written at pickup time via `/feature`, `/refactor`, or `/bugfix`. When a workstream ships, mark it here with the PR number (same convention as the phase tables in CLAUDE.md).
 
@@ -8,7 +8,7 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 **As of 2026-07-08: B-track (B1–B4) COMPLETE; drift fixes #263/#236/#272 shipped; flaky-test race fixed (#283).** **D-track COMPLETE (D1 #293 · D2 #295 · D3 #297); E1 #298 + E3 #301 shipped — the review's directive-ready queue is EMPTY (2026-07-08).** Every remaining item needs a decision or user action: #262 secret (Stephen-only, blocks rules+hosting auto-deploy), E6 dependency majors (Dependabot #249/#251 + red #250), A4 project split, A7 repo-settings half, A8 runner image, E4 issue-hygiene (optional), E5 polish debts, F-track features (F1 Shared Counters P2–P4 remains the active feature directive), and the launch-era items (#300 version skew, web pull-apply tests). **Decision/user-gated:** — A6/C4/C1/B1 all shipped (see below). **Everything remaining needs a decision or user action first:** #262 (missing FIREBASE_SERVICE_ACCOUNT secret — blocks rules+hosting auto-deploy), #263 (LWW edge canon — one-vector fix once decided), A4 (project split), E6 (dependency majors — Dependabot #249/#251 firebase runtime + red #250 vitest 4), A7's repo-settings half, A8 (runner image), E-track items, F-track features. *(B2 and D1–D3 were listed here before they shipped — see the B-track/D-track COMPLETE notes above and their sections below.)*
 
-**Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236). The Play Phase-0 architecture spike can now build inside `apps/play`.
+**Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236).
 
 ---
 
@@ -455,51 +455,15 @@ From the end-user review. Theme: the deep machinery is built — most opportunit
 
 ---
 
-## Track G — Play OYBC enablement (cross-product)
+## Track G — Play OYBC
 
-Play OYBC — the real-time, collaborative party-bingo sibling product — was specced in a separate session. **Canonical plan: [`docs/PLAY_TRANSITION.md`](PLAY_TRANSITION.md)** (six PR-sized tasks, T1–T6, complete code + verification per task; execution not started). This track does not restate that plan; it records how it interlocks with the rest of this roadmap.
-
-**Decision recorded:** Play lives in this repo as `apps/play`, with the product boundary enforced by the **package dependency graph, not repo topology**: `apps/play` depends ONLY on domain-free packages (`@oybc/bingo-core`, `@oybc/riso-tokens`), never `@oybc/shared`.
-
-### The standing guardrail (binds Tracks B and C)
-
-Any refactor in this roadmap must respect the Play/Do boundary:
-
-- `packages/bingo-core` stays **primitives-only** — no Do entities (Board/Task/BoardTask), no Play session types. Anything wanting to cross the line either is pure game math (→ moves into bingo-core) or belongs to exactly one product.
-- A rework that has Play importing `@oybc/shared`, or Do domain types drifting into bingo-core, is **breaking the design, not evolving it**.
-- Do-only shared machinery (the C4 sync-contract constants, entity types, Zod schemas) stays in `@oybc/shared` — that package is Do-domain by definition.
-
-### G1–G6 — the transition tasks (T1–T6 in PLAY_TRANSITION.md) — **ALL SHIPPED 2026-07-06/07**
-
-T1 [#229](https://github.com/2014sheas/oybc/pull/229) · T2 [#233](https://github.com/2014sheas/oybc/pull/233) (golden-parity: 48-case seeded matrix, identical Jest/XCTest arrays) · T3 [#234](https://github.com/2014sheas/oybc/pull/234) · T4 [#230](https://github.com/2014sheas/oybc/pull/230) · T5 [#238](https://github.com/2014sheas/oybc/pull/238) (boundary lint verified to bite; play.yml lane live) · T6 [#239](https://github.com/2014sheas/oybc/pull/239) (`validateWin` is emulator-only — NOT deployed; A2's CI must adopt its esbuild build).
-
-| Task | One-liner | Interacts with |
-| --- | --- | --- |
-| T1 `packages/bingo-core` | bingoDetection, shuffle, centerSquare + enums move out of shared (shared re-exports; zero web import changes); `MIRRORS.md` maps TS↔Swift twins; web.yml paths widen to `packages/**` | **C1, C2** — see below |
-| T2 `placeBoard<T>` | one placement core collapses the four duplicated board-generation sites (web/iOS wizard persist + shared/iOS spawn); golden-parity seeded-LCG tests in Jest **and** XCTest | **E3** — this *is* the wizard→persist seam purification the PR #202 lesson asked for; **C1** — the golden-parity mechanism is the same shared-vector idea |
-| T3 `packages/riso-tokens` | riso.css extracted ("extract at three": web + coming-soon + Play); coming-soon keeps its copy + gets a CI drift-check | none (A6 hosting automation unaffected) |
-| T4 Governance | root CLAUDE.md "two products, one repo" scoping section; design doc → `docs/play/PLAY_OYBC.md` (pending Stephen's canonical-home decision) | **E4** — land the scoping section in the same hygiene pass or before it |
-| T5 `apps/play` scaffold | Vite/React, deps = bingo-core + riso-tokens only, ESLint import ban on `@oybc/shared`, `play.yml` CI lane, throwaway demo board proving the chain | new CI lane joins Track A's world |
-| T6 Functions esbuild + `validateWin` | functions get esbuild bundling (workspace deps inlined) + an emulator-only callable running the same `detectBingos` server-side | **A2** — see below |
-
-### Roadmap workstreams this changes
-
-- **A2 (Functions CI)** — build step must use T6's esbuild pipeline (`tsc --noEmit` + bundle), not plain `tsc`; T6's emulator `validateWin` harness is the natural seed for A2's emulator tests. If A2 lands first, write it so T6 slots in; if T6 lands first, A2 inherits its build.
-- **C1 (shared JSON test vectors)** — after T1, fixtures for bingoDetection/shuffle/centerSquare/placeBoard live in **bingo-core**, not shared; `MIRRORS.md` becomes the authoritative TS↔Swift pairing list that C1/C2 audit against. T2's golden-parity seeded tests are the C1 mechanism applied to placement — build C1 as the generalization of T2's pattern, not a parallel invention.
-- **C2 (port gaps)** — `MIRRORS.md` (T1) is where the "every TS algorithm has a named Swift twin" inventory lives from then on; C2's acceptance criteria update to "MIRRORS.md is complete and fixture-backed".
-- **E3 (seam tests)** — T2 delivers the placement-seam purity; E3 drops that item and keeps cascade-delete + pull-apply.
-- **A4 (project split)** — gains a future consumer: Play's realtime backend and `play.oybc.com` hosting will multiply whatever project topology A4 picks. Factor Play into the A4 decision even though Play's backend itself is out of scope here.
-- **B-track** — no conflict: `BoardPlaySurface`/`BoardPlayView` are explicitly NOT reused by Play, so B2's extraction is free to reshape them; B1's `tasks.ts`/`AppDatabase` splits don't touch the bingo-core surface. T2 does touch `wizardPersist.ts`/`BoardWizardPersist.swift` — if B-track and T2 are in flight together, T2 goes first (it shrinks what B has to move).
-
-### Open item needing Stephen
-
-Canonical home of the Play design doc (`docs/play/PLAY_OYBC.md` vs mastered elsewhere with a pointer) — the only unconfirmed T4 decision.
+Play OYBC moved to its own repo (`2014sheas/play-oybc`) on 2026-10-22. (The shipped bingo-core / riso-tokens extractions T1–T3 remain in this repo.)
 
 ---
 
 ## Sequencing summary
 
-- **Priority lane (Play demo target ~Halloween):** G-track T1 → T2 → (T3 ‖ T4) → T5 → T6 per `PLAY_TRANSITION.md`. T1+T2 are worth doing even if Play stalls — they close a real 4-site duplication and purify the PR #202 seam.
+- **Priority lane (historical):** G-track T1 → T2 (shipped). T1+T2 were worth doing even if Play stalls — they close a real 4-site duplication and purify the PR #202 seam.
 - **Now / next small PRs (interleave with G-track):** A3 (one-liner), A1, C3 (small, live bugs), A2 (after or with T6 — shared build pipeline), C2.
 - **Then:** B1 → B2 → B3 (in order; B4 rides B3's coattails; if T2 is still in flight, it lands before B touches the wizard-persist files), C1 alongside (generalizing T2's golden-parity pattern; fixtures split bingo-core vs shared per Track G).
 - **Then:** D1–D3 (after B4 centralizes enqueueing), E2 → E3 (after B-track exposes the seams; T2 already covered the placement seam), F2.

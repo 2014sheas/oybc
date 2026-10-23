@@ -3,7 +3,7 @@
  *
  * Same seed ⇒ same sequence, in Jest and (ported identically) in XCTest.
  * This is the RNG every golden / cross-platform parity test in the Play
- * transition plan (PLAY_TRANSITION.md T2) feeds into `placeBoard` so the
+ * transition plan (bingo-core extraction T2) feeds into `placeBoard` so the
  * TS and Swift suites can assert byte-identical expected arrays.
  *
  * Swift twin (see apps/ios/OYBC/OYBCTests/BoardPlacementTests.swift):

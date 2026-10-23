@@ -8,7 +8,7 @@
   },
   "main": "lib/index.js",
   "scripts": {
-    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --target=node22 --format=cjs --outfile=lib/index.js --external:firebase-admin --external:firebase-functions",
+    "build": "tsc",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions,firestore",
     "deploy": "firebase deploy --only functions",
@@ -21,8 +21,6 @@
     "resend": "^6.33.0"
   },
   "devDependencies": {
-    "@oybc/bingo-core": "file:../packages/bingo-core",
-    "esbuild": "^0.28.2",
     "typescript": "^5.5.4",
     "vitest": "^4.1.10"
   }

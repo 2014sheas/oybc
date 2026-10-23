@@ -1,7 +1,7 @@
 {
   "name": "@oybc/bingo-core",
   "version": "1.0.0",
-  "description": "Pure bingo game math shared by OYBC (Do) and Play OYBC — detection, shuffle, center-square, placement. No domain types, no platform code.",
+  "description": "Pure bingo game math used by OYBC — detection, shuffle, center-square, placement. No domain types, no platform code.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

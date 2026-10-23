@@ -26,7 +26,7 @@ This is the judgment half of the drift-prevention system. The **mechanical** hal
 Launch these **concurrently** (one message, multiple Agent calls), each **read-only** (no edits), each scored against the invariants in `CLAUDE.md`. Give each the "verified-safe baseline" (Phase 4) so it reports **new** drift, not settled facts.
 
 1. **Code quality & maintainability** — `@ts-ignore`/`as!`/force-unwraps, swallowed catches, `Task {` shadow trap, dead code beyond what knip catches, extract-at-three violations + cross-platform divergence, test-coverage gaps, stale TODOs. Model: use the `feature-dev:code-reviewer` or a `general-purpose` agent.
-2. **Architecture** — the invariants in CLAUDE.md scoped to Do: local-DB-source-of-truth, offline-first, LWW + soft-delete + per-mutation `sync_queue` enqueue, atomic pull-path, `SYNC_COLLECTIONS` mirroring, package purity, Play/Do boundary (`bingo-core`/`riso-tokens` only), DB-injection seam, denormalized-stat + version-bump discipline. Flag god-files + duplication (note these feed ROADMAP B6).
+2. **Architecture** — the invariants in CLAUDE.md scoped to Do: local-DB-source-of-truth, offline-first, LWW + soft-delete + per-mutation `sync_queue` enqueue, atomic pull-path, `SYNC_COLLECTIONS` mirroring, package purity, DB-injection seam, denormalized-stat + version-bump discipline. Flag god-files + duplication (note these feed ROADMAP B6).
 3. **iOS-guidelines & cross-platform consistency** — Riso token usage (the adaptive-ink-on-gold/fixed-fill trap: `--riso-ink` vs `--riso-ink-static`/`--riso-on-color`; iOS `Color.risoInk` vs `.risoInkStatic`), no hardcoded hex on production surfaces, `dlog` release-gating, snapshot hygiene, web↔iOS parity (rule 6), documented divergences NOT re-flagged.
 4. **Security** — Firestore rules (cross-user isolation, version-monotonicity, owner-match, default-deny), Cloud Functions auth gates, no committed secrets, no PII in logs, dev-bypass DEV/DEBUG-gating, injection surfaces.
 
@@ -41,7 +41,7 @@ Each agent returns findings as `Severity | Finding | Evidence (file:line) | Sugg
 
 ### Phase 4 — Verified-safe baseline (carry forward)
 
-Seed each re-run's agents with what the last audit confirmed clean, so they spend effort on new drift, not re-litigating settled invariants. As of the 2026-08 baseline (`project_deep_dive_audit_2026_08`), verified clean: sync enqueue coverage across all entities, atomic+LWW pull path (both platforms, mirrored), `SYNC_COLLECTIONS` single-sourced + fixture-enforced, `shared`/`bingo-core` purity, Play/Do boundary, DB-injection seam, `_Concurrency.Task` discipline, `dlog` release-gating, no committed secrets, cross-user isolation, `signups` default-denied, Admin-only parent delete, `deleteUserData` uses `auth.uid`. Re-confirm cheaply; deep-dive only where the diff since the last audit touched them.
+Seed each re-run's agents with what the last audit confirmed clean, so they spend effort on new drift, not re-litigating settled invariants. As of the 2026-08 baseline (`project_deep_dive_audit_2026_08`), verified clean: sync enqueue coverage across all entities, atomic+LWW pull path (both platforms, mirrored), `SYNC_COLLECTIONS` single-sourced + fixture-enforced, `shared`/`bingo-core` purity, DB-injection seam, `_Concurrency.Task` discipline, `dlog` release-gating, no committed secrets, cross-user isolation, `signups` default-denied, Admin-only parent delete, `deleteUserData` uses `auth.uid`. Re-confirm cheaply; deep-dive only where the diff since the last audit touched them.
 
 ---
 

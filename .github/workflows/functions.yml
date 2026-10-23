@@ -16,14 +16,12 @@ on:
     branches: [dev]
     paths:
       - 'functions/**'
-      - 'packages/bingo-core/**'
       - 'firebase.json'
       - '.github/workflows/functions.yml'
   push:
     branches: [dev]
     paths:
       - 'functions/**'
-      - 'packages/bingo-core/**'
       - 'firebase.json'
       - '.github/workflows/functions.yml'
   workflow_dispatch:
@@ -56,12 +54,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        # v6 reads the pnpm version from `package.json#packageManager`
-        # (pinned to 9.15.4 at the repo root) and ignores any `version:`
-        # input here — so we omit it.
-        uses: pnpm/action-setup@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -69,22 +61,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
 
-      - name: Install workspace dependencies (pnpm)
-        # Needed to build @oybc/bingo-core below — functions/'s "file:" devDep
-        # on it (used by validateWin.ts, inlined into the esbuild bundle)
-        # resolves to the workspace package's source tree either way, but the
-        # bundle build needs its compiled dist/ to exist.
-        run: pnpm install --frozen-lockfile
-
-      - name: Build @oybc/bingo-core
-        run: pnpm --filter @oybc/bingo-core build
-
       - name: Install functions dependencies (npm)
         working-directory: functions
         run: npm ci
 
       - name: Build functions
-        # tsc --noEmit (type-check) + esbuild bundle to lib/index.js. The
+        # tsc compile to lib/index.js. The
         # Functions emulator loads the BUILT lib/index.js, not src/, so this
         # must run before the emulator step below — it's not implicitly
         # triggered by `emulators:exec` (predeploy hooks in firebase.json
@@ -144,22 +126,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 22  # = the functions runtime (nodejs22) and package.json engines; Node 20 resolves different types (2026-10-17)
           cache: 'npm'
           cache-dependency-path: functions/package-lock.json
-
-      - name: Install workspace dependencies (pnpm)
-        # @oybc/bingo-core must be built for the esbuild bundle (validateWin).
-        run: pnpm install --frozen-lockfile
-
-      - name: Build @oybc/bingo-core
-        run: pnpm --filter @oybc/bingo-core build
 
       - name: Install functions dependencies (npm)
         working-directory: functions

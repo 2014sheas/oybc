@@ -37,7 +37,6 @@ import { confirmationEmailHtml, confirmationEmailText } from "./confirmEmail";
 import { buildSignupNotification } from "./signupNotify";
 import { purgeUserData } from "./purgeUser";
 
-export { validateWin } from "./validateWin";
 export { revenueCatWebhook } from "./revenueCatWebhook";
 
 initializeApp();

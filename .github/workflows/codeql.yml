@@ -3,7 +3,7 @@ name: CodeQL
 # Static security analysis (2026-10 CI audit). Free for public repos; results
 # land in the repo's Security → Code scanning tab and as PR annotations.
 #
-# Languages: javascript-typescript (web, shared, bingo-core, play, functions,
+# Languages: javascript-typescript (web, shared, bingo-core, functions,
 # firestore-rules-tests, scripts) and actions (these workflow files). Swift is
 # deliberately NOT analysed: CodeQL's Swift extractor needs a full macOS build
 # of the app, which would add a fourth ~10-min macOS job to every PR. Revisit

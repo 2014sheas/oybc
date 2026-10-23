@@ -518,7 +518,7 @@ describe('multi-window spawn simulation', () => {
 
 // ─── Golden-parity matrix: buildSpawnPlacement ───────────────────────────────
 //
-// PLAY_TRANSITION.md T2. Byte-for-byte golden of `buildSpawnPlacement` across
+// bingo-core extraction T2. Byte-for-byte golden of `buildSpawnPlacement` across
 // {3×3, 4×4, 5×5} × {FREE, CHOSEN, NONE} × {randomized, not} ×
 // {exact-fit, overfilled pool}, driven by the shared seeded LCG below. These
 // expected arrays were committed against the OLD hand-rolled loop first
