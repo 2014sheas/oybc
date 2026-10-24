@@ -4,7 +4,7 @@ Server-side code for OYBC (TypeScript, Node 22). See the repo `CLAUDE.md`
 §Cloud Functions and `docs/MONETIZATION.md` for what each function does.
 
 ```bash
-npm ci && npm run build          # type-check + esbuild bundle to lib/index.js
+npm ci && npm run build          # compile to lib/index.js
 # emulator-backed tests (needs Java for the Firestore emulator); from the REPO ROOT:
 REVENUECAT_WEBHOOK_AUTH=test-rc-webhook-secret firebase emulators:exec \
   --only functions,firestore --project demo-oybc-functions-test \

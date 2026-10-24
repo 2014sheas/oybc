@@ -73,7 +73,7 @@ The confirmation email needs a Resend account + a verified sending domain.
 > `/unsubscribe` endpoint), and the `FIREBASE_SERVICE_ACCOUNT` Actions
 > secret is set (#262 closed) — merges to `dev` touching this package or
 > `firebase.json` now AUTO-DEPLOY via `hosting.yml`, and merges touching
-> `functions/`, `packages/bingo-core/`, or `firebase.json` auto-deploy via
+> `functions/` or `firebase.json` auto-deploy via
 > `functions.yml` (proven 2026-08-04; the deployer
 > SA needed serviceAccountUser on both runtime SAs + serviceUsageConsumer +
 > cloudfunctions.admin + secretmanager.admin, and the Cloud Billing API

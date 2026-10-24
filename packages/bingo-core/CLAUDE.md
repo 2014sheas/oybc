@@ -1,6 +1,6 @@
 # bingo-core Package
 
-Pure bingo game math shared by OYBC (Do) and Play OYBC — detection, shuffle,
+Pure bingo game math used by OYBC — detection, shuffle,
 center-square, placement. No domain types, no platform code.
 
 ## Rules
@@ -9,8 +9,8 @@ center-square, placement. No domain types, no platform code.
 - **No side effects** — every export must be a pure function, type, constant, or enum.
 - **No Do-domain types** — `Task` / `Board` / `BoardTask` (and any other domain entity from
   `@oybc/shared`) must never appear here. Inputs/outputs are primitives (booleans, numbers,
-  strings, generic arrays) so the same code can run for OYBC (Do) and Play OYBC without either
-  depending on the other's domain model. `@oybc/shared` depends on this package (compat
+  strings, generic arrays) so the package stays decoupled from the domain model.
+  `@oybc/shared` depends on this package (compat
   re-exports), never the other way around — `packages/bingo-core` must never import
   `@oybc/shared`.
 - iOS Swift files mirror these modules manually — changes here require a corresponding iOS

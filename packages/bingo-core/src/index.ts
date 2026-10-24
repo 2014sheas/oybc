@@ -1,7 +1,7 @@
 /**
  * @oybc/bingo-core
  *
- * Pure bingo game math shared by OYBC (Do) and Play OYBC.
+ * Pure bingo game math used by OYBC.
  * ONLY primitives-in/primitives-out pure functions — no domain entities
  * (Task/Board/BoardTask), no platform code, no side effects. This purity
  * is what lets the same detection code run in browsers, and Node

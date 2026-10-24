@@ -35,7 +35,6 @@ const SCAN = [
   { dir: 'apps/ios/OYBC', exts: ['.swift'] },
   { dir: 'packages/shared/src', exts: ['.ts'] },
   { dir: 'packages/bingo-core/src', exts: ['.ts'] },
-  { dir: 'apps/play/src', exts: ['.ts', '.tsx'] },
 ];
 
 // Path fragments that are never "source we hold to the ceiling".
@@ -70,7 +69,7 @@ function walk(absDir, exts, out) {
   try {
     entries = readdirSync(absDir, { withFileTypes: true });
   } catch {
-    return; // directory may not exist (e.g. apps/play not scaffolded)
+    return; // directory may not exist
   }
   for (const e of entries) {
     const abs = join(absDir, e.name);

@@ -8,7 +8,7 @@ import { makeSeededRng } from '../../src/algorithms/seededRng';
  * Preview's seeded roll) and as a test helper in
  * `packages/bingo-core/tests/seededRng.ts`, because `@oybc/shared` depends on
  * `@oybc/bingo-core` and a dependency the other way would be a package-graph
- * cycle (docs/ROADMAP.md Track G's Play/Do boundary). The SAME literals are
+ * cycle. The SAME literals are
  * asserted by `packages/bingo-core/tests/seededRng.test.ts`, so the two
  * copies — and the Swift twin, which ports the same recurrence — cannot drift
  * silently. A change to either copy reds both suites.

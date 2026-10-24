@@ -1,4 +1,4 @@
-// Compat shim (PLAY_TRANSITION.md T1): bingo-core's symbols intentionally
+// Compat shim (bingo-core extraction): bingo-core's symbols intentionally
 // re-export through BOTH this barrel and constants/index.ts — identical
 // bindings, so TS tolerates the overlap. Don't "dedupe" one path away:
 // consumers import the functions from algorithms and the enums/constants
