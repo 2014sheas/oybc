@@ -47,7 +47,7 @@ enum TutorialStageState: Equatable {
         }
     }
 
-    /// The controls lit at `step`.
+    /// The controls lit at `step` (none on a tell: nothing is lifted).
     func spots(step: Int) -> [TutorialSpot] {
         switch self {
         case .createTask(let s): return s.spots(step: step)
@@ -56,15 +56,20 @@ enum TutorialStageState: Equatable {
         }
     }
 
-    /// A line that replaces the step's copy once the state moved within the
-    /// step (lesson 2's "Eight of eight. Tap Next.").
-    func textOverride(step: Int) -> String? {
-        if case .createBoard(let s) = self { return s.textOverride(step: step) }
-        return nil
+    /// A step that replaces the catalog's once the state moved within the
+    /// step (lesson 2's "Tap Next." at 8/8, lesson 3's "Tap +5 once more.",
+    /// the finale's "Two left." and the Greenlog's line).
+    func stepOverride(step: Int) -> TutorialStep? {
+        switch self {
+        case .createTask: return nil
+        case .createBoard(let s): return s.stepOverride(step: step)
+        case .completeBoard(let s): return s.stepOverride(step: step)
+        }
     }
 
-    /// The scrim and coach mark step aside (a shipped moment plays whole).
-    var coachHidden: Bool {
+    /// The scrim and rings step aside while a shipped moment plays whole; the
+    /// coach mark stays (lesson 3 steps 14 and 16c).
+    var scrimHidden: Bool {
         if case .completeBoard(let s) = self { return s.moment != nil }
         return false
     }
@@ -99,22 +104,25 @@ enum TutorialStageState: Equatable {
 
 // MARK: - Lesson 1 · Create a task
 
-/// The Tasks facsimile + New task sheet facsimile. Steps: + · quick add ·
-/// Special type · verb · goal · unit · Add to library.
+/// The Tasks facsimile + New task sheet facsimile. Steps (`LESSON_COPY.md`):
+/// tell · + · tell · quick add · Special type · tell · verb · goal · unit ·
+/// Add to library.
 struct TutorialCreateTaskState: Equatable {
     enum Step {
-        static let plus = 0, quickAdd = 1, special = 2, verb = 3, goal = 4, unit = 5, submit = 6
+        static let tellLibrary = 0, plus = 1, tellKinds = 2, quickAdd = 3, special = 4
+        static let tellCounter = 5, verb = 6, goal = 7, unit = 8, submit = 9
+        static let tells: Set<Int> = [tellLibrary, tellKinds, tellCounter]
     }
 
     var sheetOpen = false
     var quickText = ""
-    /// The Simple task written at step 2 (the "In your library" row).
+    /// The Simple task written at step 4 (the "In your library" row).
     var addedTitle: String?
     var panelOpen = false
     var verb = ""
     var goal = ""
     var unit = ""
-    /// The Counting task written at step 7.
+    /// The Counting task written at step 10.
     var countingTitle: String?
 
     static let verbDefault = "Read", goalDefault = "20", unitDefault = "pages"
@@ -140,9 +148,10 @@ struct TutorialCreateTaskState: Equatable {
 
     static func implied(step: Int, typed: [String: String]) -> TutorialCreateTaskState {
         var s = TutorialCreateTaskState()
-        s.sheetOpen = step >= Step.quickAdd
+        // The second tell sits over the open sheet; the third over the open panel.
+        s.sheetOpen = step >= Step.tellKinds
         s.addedTitle = step >= Step.special ? typed[TutorialField.quickAdd.rawValue] : nil
-        s.panelOpen = step >= Step.verb
+        s.panelOpen = step >= Step.tellCounter
         // A field the person already passed shows the spec's example when
         // nothing was typed; the field being filled keeps what was typed so far.
         if step >= Step.verb { s.verb = typed[TutorialField.verb.rawValue] ?? (step > Step.verb ? verbDefault : "") }
@@ -176,6 +185,8 @@ struct TutorialCreateTaskState: Equatable {
 
     mutating func apply(_ event: TutorialEvent, step: Int) -> TutorialOutcome {
         switch (event, step) {
+        case (.nextTapped, let s) where Step.tells.contains(s):
+            return .advanced
         case (.plusTapped, Step.plus):
             sheetOpen = true
             return .advanced
@@ -223,7 +234,10 @@ struct TutorialCreateTaskState: Equatable {
 /// fixture and is dropped with it.
 struct TutorialCreateBoardState: Equatable {
     enum Step {
-        static let hub = 0, timeframe = 1, size = 2, addFromPool = 3, pickPool = 4, sourceRow = 5, exclude = 6, handAdd = 7, activate = 8
+        static let hub = 0, tellSetup = 1, timeframe = 2, window = 3, size = 4, setupNext = 5
+        static let tellSources = 6, addFromPool = 7, pickPool = 8, tellTune = 9, sourceRow = 10
+        static let exclude = 11, handAdd = 12, activate = 13
+        static let tells: Set<Int> = [tellSetup, tellSources, tellTune]
     }
 
     enum Screen: Equatable { case hub, setup, tasks, preview }
@@ -260,17 +274,17 @@ struct TutorialCreateBoardState: Equatable {
         var s = TutorialCreateBoardState()
         switch step {
         case Step.hub: s.screen = .hub
-        case Step.timeframe, Step.size: s.screen = .setup
+        case Step.tellSetup...Step.setupNext: s.screen = .setup
         case Step.activate: s.screen = .preview
         default: s.screen = .tasks
         }
-        s.timeframePicked = step >= Step.size
-        s.sizePicked = step > Step.size
+        s.timeframePicked = step >= Step.window
+        s.sizePicked = step >= Step.setupNext
         s.sourceSheetOpen = step == Step.pickPool
-        s.poolAdded = step >= Step.sourceRow
+        s.poolAdded = step >= Step.tellTune
         s.sourceExpanded = step == Step.exclude
         s.excluded = step >= Step.handAdd
-        // Added at step 8 (before its Next) or implied by step 9.
+        // Added at step 13 (before its Next) or implied by step 14.
         if step >= Step.handAdd, let title = typed[TutorialField.wizardQuickAdd.rawValue] {
             s.handAddedTitle = title
         } else if step >= Step.activate {
@@ -288,7 +302,12 @@ struct TutorialCreateBoardState: Equatable {
         switch step {
         case Step.hub: return [.init(id: .oneOffCard)]
         case Step.timeframe: return [.init(id: .timeframeWeekly)]
-        case Step.size: return sizePicked ? [.init(id: .setupNext), .init(id: .sizeCard3, ringed: false)] : [.init(id: .sizeCard3)]
+        case Step.window: return [.init(id: .windowChip)]
+        case Step.size: return [.init(id: .sizeCard3)]
+        case Step.setupNext:
+            // The count and the centre row are lit to read (first: the notch points
+            // at the caption); Next is the one wired control.
+            return [.init(id: .taskCountLabel, primary: false), .init(id: .centerRow, primary: false), .init(id: .setupNext)]
         case Step.addFromPool: return [.init(id: .addFromPool)]
         case Step.pickPool:
             let row = TutorialSpot(id: .poolRow(TutorialCreateBoardFixture.livePool))
@@ -301,23 +320,26 @@ struct TutorialCreateBoardState: Equatable {
         }
     }
 
-    func textOverride(step: Int) -> String? {
-        step == Step.handAdd && handAddedTitle != nil ? TutorialCatalog.createBoardNextText : nil
+    func stepOverride(step: Int) -> TutorialStep? {
+        step == Step.handAdd && handAddedTitle != nil ? TutorialCatalog.createBoardNextStep : nil
     }
 
     mutating func apply(_ event: TutorialEvent, step: Int) -> TutorialOutcome {
         switch (event, step) {
+        case (.nextTapped, let s) where Step.tells.contains(s):
+            return .advanced
         case (.oneOffTapped, Step.hub):
             screen = .setup
             return .advanced
         case (.weeklyTapped, Step.timeframe):
             timeframePicked = true
             return .advanced
+        case (.nextTapped, Step.window):
+            return .advanced
         case (.size3Tapped, Step.size):
             sizePicked = true
-            return .stayed
-        case (.setupNextTapped, Step.size):
-            guard sizePicked else { return .ignored }
+            return .advanced
+        case (.setupNextTapped, Step.setupNext):
             screen = .tasks
             return .advanced
         case (.addFromPoolTapped, Step.addFromPool):
@@ -365,8 +387,10 @@ struct TutorialCreateBoardState: Equatable {
 /// and hold menu. No writes.
 struct TutorialCompleteBoardState: Equatable {
     enum Step {
-        static let edit = 0, tapJournal = 1, pickReplacement = 2, save = 3, tapStretch = 4, toast = 5
-        static let tapRead = 6, chips = 7, undoStrip = 8, holdTidy = 9, markDone = 10, finale = 11
+        static let tellReading = 0, edit = 1, tapJournal = 2, pickReplacement = 3, save = 4, tellPlay = 5
+        static let tapStretch = 6, toast = 7, tapRead = 8, chips = 9, undoStrip = 10, holdTidy = 11
+        static let markDone = 12, bingoMoment = 13, tellLines = 14, finale = 15
+        static let tells: Set<Int> = [tellReading, tellPlay, tellLines]
     }
 
     enum Moment: Equatable { case bingo, greenlog }
@@ -381,10 +405,11 @@ struct TutorialCompleteBoardState: Equatable {
     var squareSheetOpen = false
     var undoText: String?
     var holdMenuOpen = false
-    /// A shipped moment is on screen (under the bar, no scrim).
+    /// A shipped moment is on screen (under the bar, no scrim). The Bingo plays
+    /// once; later lines ring gold with no moment.
     var moment: Moment?
-    /// The Bingo played; later lines ring gold with no moment.
-    var bingoPlayed = false
+    /// The lines the finale's last tap closed, for its "Two left." note.
+    var lastClosedLines: [[Int]] = []
 
     static let undoLine = "Logged +\(TutorialSampleWeek.chip) pages · \(TutorialSampleWeek.boardName)"
 
@@ -397,6 +422,8 @@ struct TutorialCompleteBoardState: Equatable {
     var changeCount: Int { editing && swapped ? 1 : 0 }
     /// The finale's squares still open.
     var remaining: [Int] { TutorialSampleWeek.grid.indices.filter { !done.contains($0) } }
+    /// Squares the finale has completed so far (16b's "Two left." shows after the first).
+    var finaleTaps: Int { done.count - Self.implied(step: Step.finale).done.count }
 
     /// A square's title as shown now.
     func title(at slot: Int) -> String {
@@ -413,14 +440,13 @@ struct TutorialCompleteBoardState: Equatable {
             s.done.insert(TutorialSampleWeek.Slot.read)
             s.readCount = TutorialSampleWeek.grid[TutorialSampleWeek.Slot.read].count + 2 * TutorialSampleWeek.chip
         }
-        if step >= Step.finale {
-            s.done.insert(TutorialSampleWeek.Slot.tidy)
-            s.bingoPlayed = true
-        }
+        if step >= Step.bingoMoment { s.done.insert(TutorialSampleWeek.Slot.tidy) }
         s.toastVisible = step == Step.toast
         s.squareSheetOpen = step == Step.chips || step == Step.undoStrip
         s.undoText = step == Step.undoStrip ? undoLine : nil
         s.holdMenuOpen = step == Step.markDone
+        // Reopening on the Bingo step replays the moment; Back to board moves on.
+        s.moment = step == Step.bingoMoment ? .bingo : nil
         return s
     }
 
@@ -443,13 +469,31 @@ struct TutorialCompleteBoardState: Equatable {
         }
     }
 
+    func stepOverride(step: Int) -> TutorialStep? {
+        switch step {
+        case Step.chips where undoText != nil && !done.contains(TutorialSampleWeek.Slot.read):
+            return TutorialCatalog.completeBoardSecondChipStep
+        case Step.finale where moment == .greenlog:
+            return TutorialCatalog.completeBoardGreenlogStep
+        case Step.finale where finaleTaps > 0:
+            return TutorialCatalog.completeBoardFinaleStep(
+                remaining: remaining.count,
+                newLines: lastClosedLines.map(TutorialSampleWeek.lineName),
+                lineCount: completeLines.count
+            )
+        default:
+            return nil
+        }
+    }
+
     mutating func apply(_ event: TutorialEvent, step: Int) -> TutorialOutcome {
-        // The moments' buttons work at any step they can show.
+        // The moments' buttons work whenever a moment shows.
         switch event {
         case .momentBackTapped:
             guard let open = moment else { return .ignored }
             moment = nil
-            return open == .greenlog ? .completed(exit: nil) : .stayed
+            // The Bingo is its own step; Back to board moves on to the tell.
+            return open == .greenlog ? .completed(exit: nil) : .advanced
         case .momentNewBoardTapped:
             guard moment == .greenlog else { return .ignored }
             moment = nil
@@ -459,6 +503,8 @@ struct TutorialCompleteBoardState: Equatable {
         }
         guard moment == nil else { return .ignored }
         switch (event, step) {
+        case (.nextTapped, let s) where Step.tells.contains(s):
+            return .advanced
         case (.editTapped, Step.edit):
             editing = true
             return .advanced
@@ -499,10 +545,11 @@ struct TutorialCompleteBoardState: Equatable {
             holdMenuOpen = false
             done.insert(TutorialSampleWeek.Slot.tidy)
             moment = .bingo
-            bingoPlayed = true
             return .advanced
         case (.squareTapped(let slot), Step.finale) where remaining.contains(slot):
+            let before = completeLines
             done.insert(slot)
+            lastClosedLines = completeLines.filter { !before.contains($0) }
             if remaining.isEmpty { moment = .greenlog }
             return .stayed
         default:
