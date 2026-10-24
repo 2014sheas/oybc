@@ -143,11 +143,11 @@ test.describe('Task Detail shell', () => {
     await expect(page.getByRole('checkbox', { name: 'Walk the dog' })).toBeChecked();
   });
 
-  test('⋯ menu: Delete task… opens the existing confirm; counting offers counter settings only when linked', async ({ page }) => {
+  test('⋯ menu: Delete task… opens the existing confirm; a plain counting task offers Use as shared counter, never counter settings', async ({ page }) => {
     await page.goto(`/tasks/${LONE}?__oybc_test_bypass=1`);
     await page.getByRole('button', { name: 'Task options' }).click();
     const menu = page.getByRole('menu', { name: 'Task options' });
-    await expect(menu.getByRole('menuitem')).toHaveText([/Delete task…/]);
+    await expect(menu.getByRole('menuitem')).toHaveText([/Use as shared counter/, /Delete task…/]);
     await menu.getByRole('menuitem', { name: 'Delete task…' }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
   });
@@ -165,12 +165,13 @@ test.describe('Task Detail shell', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(dots).toBeFocused();
-    // A counting task with no counter, and a Normal task, have no counter settings.
-    for (const plain of [READ, WALK]) {
-      await page.goto(`/tasks/${plain}?__oybc_test_bypass=1`);
-      await page.getByRole('button', { name: 'Task options' }).click();
-      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText([/Delete task…/]);
-    }
+    // A counting task with no counter offers "Use as shared counter" instead; a Normal task offers neither.
+    await page.goto(`/tasks/${READ}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Task options' }).click();
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText([/Use as shared counter/, /Delete task…/]);
+    await page.goto(`/tasks/${WALK}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Task options' }).click();
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText([/Delete task…/]);
   });
 
   test('Sheet: Done pill, return pill after a swap (segment survives), board rows close or navigate', async ({ page }) => {
