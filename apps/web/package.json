@@ -21,7 +21,7 @@
     "@oybc/shared": "workspace:*",
     "dexie": "^4.4.6",
     "dexie-react-hooks": "^4.4.0",
-    "firebase": "^12.16.0",
+    "firebase": "^13.1.0",
     "html-to-image": "^1.11.13",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
