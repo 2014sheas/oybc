@@ -34,5 +34,7 @@ struct TaskDetailActions {
     var onOpenCounter: (String) -> Void = { _ in }
     var onOpenBoard: (String) -> Void = { _ in }
     var onOpenCounterSettings: () -> Void = {}
+    /// ⋯ › Use as shared counter (`TaskDetailModel.canPromoteToCounter`).
+    var onUseAsCounter: () -> Void = {}
     var onDelete: () -> Void = {}
 }

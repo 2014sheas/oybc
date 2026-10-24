@@ -5,18 +5,21 @@ import styles from './TaskDetail.module.css';
 export interface DetailMenuProps {
   /** "Open counter settings" (counting tasks with a counter): absent hides the item. */
   onOpenCounterSettings?: () => void;
+  /** "Use as shared counter" (a plain counting task, `canPromoteToCounter`): absent hides the item. */
+  onUseAsCounter?: () => void;
   onDelete: () => void;
 }
 
 /**
- * The ⋯ menu: Open counter settings (counting) · ─ · Delete task… (red).
+ * The ⋯ menu: Open counter settings (counting with a counter) or Use as shared
+ * counter (a plain counting task) · ─ · Delete task… (red).
  * "Place on a board…" is omitted: no placement flow is reachable from Task
  * Detail on web today. Keyboard: focus lands on the first item, arrows / Home /
  * End rove, Escape and a choice hand focus back to ⋯, an outside press closes.
  *
  * @returns The 32px ⋯ button and its popover.
  */
-export function DetailMenu({ onOpenCounterSettings, onDelete }: DetailMenuProps): React.ReactElement {
+export function DetailMenu({ onOpenCounterSettings, onUseAsCounter, onDelete }: DetailMenuProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -71,6 +74,15 @@ export function DetailMenu({ onOpenCounterSettings, onDelete }: DetailMenuProps)
               <button type="button" role="menuitem" tabIndex={-1} className={styles.menuItem} onClick={() => choose(onOpenCounterSettings)}>
                 <RisoIcon name="sliders" size={16} />
                 Open counter settings
+              </button>
+              <div className={styles.menuDivider} role="separator" />
+            </>
+          )}
+          {onUseAsCounter && (
+            <>
+              <button type="button" role="menuitem" tabIndex={-1} className={styles.menuItem} onClick={() => choose(onUseAsCounter)}>
+                <RisoIcon name="sync" size={16} />
+                Use as shared counter
               </button>
               <div className={styles.menuDivider} role="separator" />
             </>

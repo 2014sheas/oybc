@@ -290,4 +290,64 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertTrue(TaskTypeSwitch.initialHasLinkedCopies(task: boardBorn, database: db))
         XCTAssertFalse(TaskTypeSwitch.initialHasLinkedCopies(task: simple, database: db), "only a Counting task is read")
     }
+
+    // MARK: - adoptPatch ("Use as counter" on a standalone match; web twin counterAdoptSubmit)
+
+    /// The standalone the sheet matched: an auto-titled goaled counting task.
+    private func standalone(title: String = "Run 5 miles", kind: CountKind = .discrete, maxCount: CountValue = 5) -> Task {
+        var t = K.task("plain", maxCount: maxCount, currentCount: 12, title: title)
+        t.countKind = kind
+        return t
+    }
+
+    func test_adoptPatch_nilWhenNothingTyped() {
+        XCTAssertNil(CounterEditModel.adoptPatch(task: standalone(), settings: .init()))
+        var d = CounterSettings.Draft()
+        d.name = "   "
+        XCTAssertNil(CounterEditModel.adoptPatch(task: standalone(), settings: d))
+    }
+
+    func test_adoptPatch_carriesTypedSettingsAtTheTasksOwnKindVerbAndNoun() throws {
+        var d = CounterSettings.Draft()
+        d.name = "Mileage"
+        d.plural = "Jog #N miles"
+        d.goals[.weekly] = 20
+        let p = try XCTUnwrap(CounterEditModel.adoptPatch(task: standalone(title: "Run 2.5 miles", kind: .continuous, maxCount: 2.5), settings: d))
+        XCTAssertEqual(p.title, "Jog 2.5 miles")
+        XCTAssertEqual(p.action, "Run")
+        XCTAssertEqual(p.unit, "miles")
+        XCTAssertNil(p.countKind)
+        XCTAssertEqual(p.counterSettings?.counterName, "Mileage")
+        XCTAssertEqual(p.counterSettings?.titleTemplatePlural, "Jog #N miles")
+        XCTAssertEqual(p.counterSettings?.timeframeGoals, CounterTimeframeGoals(weekly: 20))
+    }
+
+    func test_adoptPatch_customTitleKept_pairNeverRecased() throws {
+        var d = CounterSettings.Draft()
+        d.name = "Mileage"
+        let custom = try XCTUnwrap(CounterEditModel.adoptPatch(task: standalone(title: "Morning miles"), settings: d))
+        XCTAssertEqual(custom.title, "Morning miles")
+        XCTAssertEqual(custom.action, "Run")
+        XCTAssertEqual(custom.unit, "miles")
+    }
+
+    func test_adopt_promoteThenPatchLandsThroughTheTaskDetailWrite() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try K.seedUser(db)
+        try db.saveTask(standalone())
+        let promoted = try db.promoteTaskToCounter(taskId: "plain", now: "2026-10-24T10:00:00.000Z")
+        XCTAssertEqual(promoted.isCounter, true)
+        var d = CounterSettings.Draft()
+        d.name = "Mileage"
+        let patch = try XCTUnwrap(CounterEditModel.adoptPatch(task: promoted, settings: d))
+        try db.applyTaskEditPatch(taskId: "plain", patch: patch)
+        let saved = try XCTUnwrap(try db.fetchTask(id: "plain"))
+        XCTAssertEqual(saved.isCounter, true)
+        XCTAssertEqual(saved.counterName, "Mileage")
+        XCTAssertEqual(saved.currentCount, 12)
+        XCTAssertEqual(saved.maxCount, 5)
+        XCTAssertEqual(saved.title, "Run 5 miles")
+        XCTAssertEqual(saved.action, "Run")
+        XCTAssertEqual(saved.unit, "miles")
+    }
 }

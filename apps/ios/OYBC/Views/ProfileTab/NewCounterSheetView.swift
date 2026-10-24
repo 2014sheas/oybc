@@ -17,9 +17,12 @@ import SwiftUI
 ///     "Open {CounterName}" (fires `onNavigateToCounter`, which the caller —
 ///     `CountersHubView` — uses to dismiss the sheet + push the existing
 ///     counter's detail page).
-///   - `standalone` match → R1: the promote-to-counter UI entry point was
-///     removed (`promoteTaskToCounter` itself is untouched — see CLAUDE.md's
-///     Global Constraints). Create proceeds normally.
+///   - `standalone` match (create mode) → Create is disabled; a gold card
+///     offers "Use as counter": the existing task is promoted
+///     (`promoteTaskToCounter` — its count, goal and placements stay) and the
+///     typed name / templates / defaults are carried onto it through the Task
+///     Detail write (`CounterEditModel.adoptPatch`), then the caller navigates
+///     to its detail like a create. Never a second root for the same pair.
 ///   - no match → Create proceeds normally.
 ///
 /// Unlike web (which owns its own router and can navigate directly from
@@ -58,6 +61,10 @@ struct NewCounterSheetView: View {
     @State private var error: String? = nil
     @State private var busy: Bool = false
     @State private var pendingSwitch: KindSwitchPreview?
+    /// The standalone match an adopt is writing — held so the pool refresh mid-write cannot flip the card.
+    @State private var adoptHold: Task?
+    /// The kind the sheet had before a standalone match forced the task's — restored when the match goes away.
+    @State private var preAdoptKind: CountKind?
 
     init(
         userId: String,
@@ -106,7 +113,20 @@ struct NewCounterSheetView: View {
     /// established match, an unparseable entry), and no write is in flight.
     private var canSubmit: Bool {
         form.requiredFilled(isEditing: isEditing) && match?.kind != .established
-            && !startFromInvalid && !form.goalsInvalid && !busy
+            && adoptTarget == nil && !startFromInvalid && !form.goalsInvalid && !busy
+    }
+
+    /// Create mode: the standalone counting task an exact pair match names —
+    /// it is USED as the counter, never duplicated as a second root.
+    private var adoptTarget: Task? {
+        if let adoptHold { return adoptHold }
+        guard root == nil, let match, match.kind == .standalone else { return nil }
+        return match.task
+    }
+
+    /// "Use as counter": the required fields are filled, the defaults parse, no write in flight.
+    private var canAdopt: Bool {
+        adoptTarget != nil && form.requiredFilled(isEditing: false) && !form.goalsInvalid && !busy
     }
 
     // MARK: - Body
@@ -122,9 +142,11 @@ struct NewCounterSheetView: View {
                     busy: busy,
                     match: match,
                     isEditing: isEditing,
-                    kindLock: root.map { kindPickerLock(mode: .edit, kind: resolveCountKind($0.countKind)) } ?? .none,
+                    kindLock: adoptTarget != nil ? .all : (root.map { kindPickerLock(mode: .edit, kind: resolveCountKind($0.countKind)) } ?? .none),
+                    adopting: adoptTarget != nil,
                     onKindRequest: root == nil ? nil : requestKind,
-                    onViewCounter: onNavigateToCounter
+                    onViewCounter: onNavigateToCounter,
+                    onUseAsCounter: canAdopt ? { handleAdopt() } : nil
                 )
                 .padding(16)
             }
@@ -164,6 +186,21 @@ struct NewCounterSheetView: View {
         .onChange(of: form.kind) {
             form.startText = ""
             if root == nil { form.goalTexts = [:] }
+        }
+        // A standalone match is used at ITS kind: the (locked) picker follows it,
+        // so the Defaults cells parse in that kind's grammar.
+        .onChange(of: adoptTarget?.id) {
+            if let target = adoptTarget {
+                let kind = resolveCountKind(target.countKind)
+                if form.kind != kind {
+                    if preAdoptKind == nil { preAdoptKind = form.kind }
+                    form.kind = kind
+                }
+            } else if let back = preAdoptKind {
+                // The pair moved off the match: back to the kind the user had chosen.
+                preAdoptKind = nil
+                if form.kind != back { form.kind = back }
+            }
         }
         .kindSwitchConfirm(pending: $pendingSwitch) { p in form.kind = p.to }
     }
@@ -208,6 +245,50 @@ struct NewCounterSheetView: View {
 
     // MARK: - Actions
 
+    /// Promotes the standalone match (its verb, noun, count, goal and placements
+    /// stay) and carries the typed settings onto it (`CounterEditModel.adoptPatch`;
+    /// nothing typed = no second write).
+    private func handleAdopt() {
+        guard canAdopt, let target = adoptTarget else { return }
+        let settings = form.settingsDraft
+        let db = database
+        error = nil
+        busy = true
+        adoptHold = target
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let promoted: Task
+            do {
+                promoted = try db.promoteTaskToCounter(taskId: target.id, now: AppDatabase.currentTimestamp())
+            } catch {
+                await MainActor.run {
+                    busy = false
+                    adoptHold = nil
+                    self.error = "Could not use this task as a counter."
+                }
+                return
+            }
+            // The task is the counter now; a failed settings write leaves the
+            // sheet open on that state (the card turns into "Open …" once the
+            // pool refreshes).
+            do {
+                if let patch = CounterEditModel.adoptPatch(task: promoted, settings: settings) {
+                    try db.applyTaskEditPatch(taskId: promoted.id, patch: patch)
+                }
+            } catch {
+                await MainActor.run {
+                    busy = false
+                    adoptHold = nil
+                    self.error = "Settings not saved."
+                }
+                return
+            }
+            await MainActor.run {
+                busy = false
+                onNavigateToCounter(promoted.id)
+            }
+        }
+    }
+
     private func handleCreate() {
         guard canSubmit else { return }
         let capturedVerb = form.trimmedVerb
@@ -215,12 +296,13 @@ struct NewCounterSheetView: View {
         let parsedStarting = startFromValue
         let capturedKind = form.kind
         let capturedSettings = form.storedSettings
+        let db = database
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
             let now = AppDatabase.currentTimestamp()
             do {
-                let task = try AppDatabase.shared.createCounterTask(
+                let task = try db.createCounterTask(
                     userId: userId,
                     action: capturedVerb,
                     unit: capturedUnit,
@@ -262,9 +344,13 @@ struct NewCounterSheetContentView: View {
     /// Edit mode: hides "Start from" (the seed is a create-only field).
     var isEditing: Bool = false
     var kindLock: KindPickerLock = .none
+    /// Create mode with a standalone match: hides "Start from" (the existing task keeps its count).
+    var adopting: Bool = false
     /// Edit mode routes picks through the confirm seam; nil = set directly.
     var onKindRequest: ((CountKind) -> Void)? = nil
     var onViewCounter: (String) -> Void = { _ in }
+    /// Standalone match (create mode): "Use as counter"; nil draws the button inert.
+    var onUseAsCounter: (() -> Void)? = nil
 
     @FocusState private var focus: CounterSheetField?
 
@@ -300,7 +386,7 @@ struct NewCounterSheetContentView: View {
 
             DefaultsRowView(kind: form.kind, unit: form.trimmedNoun, texts: $form.goalTexts, derived: defaults.goals)
 
-            if !isEditing {
+            if !isEditing, !adopting {
                 fieldBlock(label: "Start from (optional)") {
                     GoalEntryView(kind: form.kind, text: $form.startText, placeholder: "0", invalid: startFromInvalid)
                 }
@@ -349,24 +435,35 @@ struct NewCounterSheetContentView: View {
         }
     }
 
-    // MARK: - Dedupe banner (established match only — R1 removed the
-    // standalone/promote branch)
+    // MARK: - Dedupe banner: an established counter ("Open …") or, in create
+    // mode, a standalone counting task ("Use as counter")
 
     @ViewBuilder
     private var dedupeBanner: some View {
-        if let match, match.kind == .established {
+        if let match, match.kind == .established || !isEditing {
+            let established = match.kind == .established
             let counterName = CounterSettings.counterDisplayName(match.task)
+            let total = formatCountTotal(match.lifetime, kind: resolveCountKind(match.task.countKind))
             VStack(alignment: .leading, spacing: 6) {
                 Text("You're already counting \(form.trimmedNoun)")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInkStatic)
-                Text("\(formatCountTotal(match.lifetime, kind: resolveCountKind(match.task.countKind))) all-time · counting on \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")")
+                Text(established
+                     ? "\(total) all-time · counting on \(match.memberCount) task\(match.memberCount == 1 ? "" : "s")"
+                     : "\(total) all-time · \(match.task.title)")
                     .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoInkStatic.opacity(0.82))
-                RisoButton(title: "Open \(counterName)", kind: .neutral, small: true) {
-                    onViewCounter(match.task.id)
+                if established {
+                    RisoButton(title: "Open \(counterName)", kind: .neutral, small: true) {
+                        onViewCounter(match.task.id)
+                    }
+                    .disabled(busy)
+                } else {
+                    RisoButton(title: "Use as counter", kind: .neutral, small: true) {
+                        onUseAsCounter?()
+                    }
+                    .disabled(busy || onUseAsCounter == nil)
                 }
-                .disabled(busy)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)

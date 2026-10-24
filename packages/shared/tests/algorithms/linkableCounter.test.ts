@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { classifyCounterCreateMatch, findLinkableCounter } from '../../src/algorithms/linkableCounter';
+import { canPromoteToCounter, classifyCounterCreateMatch, findLinkableCounter } from '../../src/algorithms/linkableCounter';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 
@@ -160,6 +160,14 @@ describe('classifyCounterCreateMatch (P5 hub-create dedupe)', () => {
     expect(result!.memberCount).toBe(1);
   });
 
+  it('a standalone the promote write would refuse (a unit task) is null — create proceeds instead of a dead-end card', () => {
+    const unit: Task = { ...toTask({ id: 'unit', action: 'Squats', unit: 'reps', currentCount: 5 }), countsTowardCounterId: 'root' };
+    expect(classifyCounterCreateMatch({ action: 'Squats', unit: 'reps' }, [unit])).toBeNull();
+    // Established matches are untouched by the gate.
+    const flagged = toTask({ id: 'flagged', action: 'Squats', unit: 'reps', isCounter: true });
+    expect(classifyCounterCreateMatch({ action: 'Squats', unit: 'reps' }, [flagged, unit])!.kind).toBe('established');
+  });
+
   it('returns null when nothing matches', () => {
     const other = toTask({ id: 'other', action: 'Push-ups', unit: 'reps' });
     const tasks = [other];
@@ -167,5 +175,24 @@ describe('classifyCounterCreateMatch (P5 hub-create dedupe)', () => {
     const result = classifyCounterCreateMatch({ action: 'Lunges', unit: 'reps' }, tasks);
 
     expect(result).toBeNull();
+  });
+});
+
+describe('canPromoteToCounter ("Use as shared counter" eligibility)', () => {
+  it('accepts a live, plain counting task', () => {
+    expect(canPromoteToCounter(toTask({ id: 'plain', action: 'Do', unit: 'push-ups' }))).toBe(true);
+    // A goal and placements never matter — the task keeps them.
+    const goaled: Task = { ...toTask({ id: 'goaled', action: 'Do', unit: 'push-ups' }), maxCount: 50 };
+    expect(canPromoteToCounter(goaled)).toBe(true);
+  });
+
+  it('refuses what promoteTaskToCounter refuses: linked copies, flagged counters, unit tasks, non-counting, deleted', () => {
+    expect(canPromoteToCounter(toTask({ id: 'copy', action: 'Do', unit: 'push-ups', sharedCounterId: 'root' }))).toBe(false);
+    expect(canPromoteToCounter(toTask({ id: 'root', action: 'Do', unit: 'push-ups', isCounter: true }))).toBe(false);
+    const unit: Task = { ...toTask({ id: 'unit', action: 'Do', unit: 'push-ups' }), countsTowardCounterId: 'root' };
+    expect(canPromoteToCounter(unit)).toBe(false);
+    expect(canPromoteToCounter(toTask({ id: 'normal', type: TaskType.NORMAL }))).toBe(false);
+    expect(canPromoteToCounter(toTask({ id: 'compound', type: TaskType.COMPOUND }))).toBe(false);
+    expect(canPromoteToCounter(toTask({ id: 'gone', action: 'Do', unit: 'push-ups', isDeleted: true }))).toBe(false);
   });
 });

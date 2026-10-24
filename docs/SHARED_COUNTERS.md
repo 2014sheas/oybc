@@ -166,7 +166,7 @@ carry the goals and windows; the counter is the accumulator).
 | 4 | Starting count = one seed `increment` TaskEvent with **`occurredAt` = a fixed far-past sentinel** (shared epoch constant), NOT `now`. Lifetime sums include it; no board window ever does. (Review finding: a now-stamped seed leaks the entire starting count into any window covering creation the moment the task later gains a goal or placement.) P4 stats can distinguish seeds by the sentinel. |
 | 5 | *(Browse half superseded 2026-10-12 — goal-less counters are browsable; placement takes the window default / kind fallback, SHARED_COUNTER_SETTINGS.md §1c amendment. The compound-child exclusion + write guard below still hold.)* Library visibility keys on the **pair** `isCounter === true && maxCount == null`: excluded from Tasks-tab browse + wizard boardable picker (via `computeBrowsableTasks`, which both surfaces on both platforms already consume) **and** from compound-child pickers, with rejection at the child-link write layer (a goal-less child can never complete — it would make an AND parent silently unreachable). Keying on the pair, not bare absent-`maxCount`, keeps PR-1 inert and guarantees a row whose flag is stripped by an old client degrades to a *visible library row*, never an unreachable task. |
 | 6 | Goal-less counters ARE valid link targets — deliberately kept in the counting template picker and `findLinkableCounter` candidates. |
-| 7 | Dedupe at hub-create: classify `findLinkableCounter`'s match — an **established counter** (has links or `isCounter`) → "You already have a **{name}** counter" + jump-to affordance, create disabled; a **standalone task** → one-tap **Promote** (sets `isCounter: true`; keeps its goal, count, placements — it stays library-visible per decision 5). The classify helper returns the matched Task row: `memberCount` alone cannot distinguish a standalone from a flagged single-member counter. |
+| 7 | Dedupe at hub-create: classify `findLinkableCounter`'s match — an **established counter** (has links or `isCounter`) → "You already have a **{name}** counter" + jump-to affordance, create disabled; a **standalone task** → one-tap **Promote** (sets `isCounter: true`; keeps its goal, count, placements — it stays library-visible per decision 5). The classify helper returns the matched Task row: `memberCount` alone cannot distinguish a standalone from a flagged single-member counter. *(The standalone branch was removed in R1 Turn 7 and **restored 2026-10-24** as "Use as counter" — see [§Using an existing task as the counter](#using-an-existing-task-as-the-counter-2026-10-24).)* |
 | 8 | Hub delete = **unlink-then-delete**: clear each member's `sharedCounterId` + `baseline`, mint one snapshot `increment` event per member (`delta` = its displayed count at unlink, `occurredAt = now`) so its squares keep showing what they showed, then soft-delete the source. `computeTaskDeletionImpact` extends to enumerate member tasks/boards for the confirm dialog. (Review finding: `deleteTaskWithCascade` today leaves members linked to a tombstoned source whose steppers silently no-op — and this doc's old "cascade delete of source→derived" claim was false; corrected in §engine above.) |
 | 9 | Board-play shared-ness recognizes flagged counters: the `sharedCounterSourceIds` builders (`useBoardPlayData`, `useCounterArrivals`, iOS twins) add an `isCounter` branch so a promoted zero-link counter placed on a board shows the ↔ marker and participates in P3 arrival detection. |
 
@@ -271,11 +271,48 @@ the counters area — Hub, Detail, creation surfaces, board-play touchpoints —
   merges. Run·miles ≠ Bike·miles by construction.
 - **Legacy verb-less counters** — silent display-only "Do" backfill; **no
   data migration** (single-user pre-release).
-- **Dedupe at create collapses to one state**: exact pair collision → gold
-  "You already have this counter → Open it". The P5 promote/standalone
-  classifier UI and green "Use as counter" card are **removed** (Turn 7
-  superseded Turn 4). The underlying promote operation may remain as an
-  internal seam but has no create-sheet entry point.
+- **Dedupe at create**: an exact pair collision with an established counter
+  → gold "You already have this counter → Open it"; with a standalone
+  counting task → the same gold card offering **"Use as counter"** (restored
+  2026-10-24 — Turn 7 had removed the P5 standalone branch, which left the
+  hub minting a second root for a pair the library already had). See
+  [§Using an existing task as the counter](#using-an-existing-task-as-the-counter-2026-10-24).
+
+### Using an existing task as the counter (2026-10-24)
+
+Owner finding, 2026-10-24: a counting task created on its own (library, a
+board wizard, quick-add) could not be made a shared counter — the only ways
+were the accidental ones (a second task with the same pair auto-links to it)
+and the hub's "+ New counter" minted a **duplicate root** for a pair the
+library already had. Both platforms now offer the promote write
+(`promoteTaskToCounter` — flags `isCounter`; the task keeps its goal, count,
+events and placements) from two places:
+
+1. **Task Detail ⋯ › "Use as shared counter"** — on a plain counting task
+   (`canPromoteToCounter`: live `COUNTING`, no `sharedCounterId`, not
+   `isCounter`, no `countsTowardCounterId`; shared predicate in
+   `linkableCounter.ts` ↔ `LinkableCounter.swift`). Promotes and lands on the
+   task's Counter Detail. Web `DetailMenu.onUseAsCounter` ↔ iOS
+   `TaskDetailActions.onUseAsCounter` / `TaskDetailModel.canPromoteToCounter`
+   / `TaskDetailViewModel.useAsCounter()`.
+2. **Hub "+ New counter" on a standalone match** — Create is disabled (like an
+   established match) and the gold card reads "You're already counting
+   {noun} · {total} all-time · {task title}" with **"Use as counter"**: the
+   task is promoted, then the sheet's typed name / templates / defaults are
+   carried onto it through the Task Detail write (`counterAdoptSubmit` ↔
+   `CounterEditModel.adoptPatch`: the stored settings only, at the task's
+   **own verb, noun and kind** — the typed pair matched case-insensitively and
+   never rewrites the task's casing; never a kind switch or the seed; nothing
+   typed = no second write), and the caller navigates to its detail like a
+   create. While the match stands, the kind picker follows the task's kind and
+   locks (so the Defaults cells parse in that kind's grammar) and "Start from"
+   hides; moving the pair off the match restores the kind the user had chosen.
+   Unit tasks are left out of the dedupe pool (the write refuses them and one
+   must never shadow an established counter of the same pair), so a lone unit
+   task is no match and Create proceeds. A failed settings write after the
+   promote reads "Settings not saved." and leaves the sheet open on the
+   counter it made.
+   Edit mode is unchanged (a rename onto a standalone pair still saves).
 
 ### Amount logging
 

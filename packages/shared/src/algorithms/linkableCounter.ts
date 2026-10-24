@@ -135,15 +135,21 @@ export type CounterCreateMatch = {
  * nothing matches (create proceeds). Wraps `findLinkableCounter`; the task
  * row is looked up because `memberCount` alone cannot distinguish a
  * standalone from a flagged single-member counter
- * (docs/SHARED_COUNTERS.md §P5 decision 7).
+ * (docs/SHARED_COUNTERS.md §P5 decision 7). Unit tasks are left out of the
+ * pool: the promote write refuses them, so offering "Use as counter" on one
+ * would dead-end, and one must never shadow an established counter of the
+ * same pair — a lone unit task is no match and create proceeds.
  */
 export function classifyCounterCreateMatch(
   input: FindLinkableCounterInput,
   tasks: readonly Task[],
 ): CounterCreateMatch | null {
-  const match = findLinkableCounter(input, tasks);
+  // A unit task can never be a counter root (the write refuses it), so it
+  // never shadows an established counter of the same pair as "the" match.
+  const pool = tasks.filter((t) => t.countsTowardCounterId == null);
+  const match = findLinkableCounter(input, pool);
   if (!match) return null;
-  const task = tasks.find((t) => t.id === match.counterId);
+  const task = pool.find((t) => t.id === match.counterId);
   if (!task) return null;
   const established = match.memberCount > 1 || task.isCounter === true;
   return {
@@ -152,4 +158,28 @@ export function classifyCounterCreateMatch(
     lifetime: match.lifetime,
     memberCount: match.memberCount,
   };
+}
+
+/**
+ * Whether a task may be used as a shared counter: a live, plain COUNTING task
+ * — not a linked copy (`sharedCounterId`), not already a counter
+ * (`isCounter`), not a unit task (`countsTowardCounterId`: a counter may not
+ * count toward a counter). The guard `promoteTaskToCounter` enforces, read
+ * by the UI that offers it (Task Detail's "Use as shared counter", the hub
+ * sheet's "Use as counter" on a standalone match). Swift twin:
+ * `canPromoteToCounter(_:)` in `LinkableCounter.swift`.
+ *
+ * @param task - The task.
+ * @returns Whether promotion would be accepted.
+ */
+export function canPromoteToCounter(
+  task: Pick<Task, 'type' | 'isDeleted' | 'sharedCounterId' | 'isCounter' | 'countsTowardCounterId'>,
+): boolean {
+  return (
+    !task.isDeleted &&
+    task.type === TaskType.COUNTING &&
+    task.sharedCounterId == null &&
+    task.isCounter !== true &&
+    task.countsTowardCounterId == null
+  );
 }

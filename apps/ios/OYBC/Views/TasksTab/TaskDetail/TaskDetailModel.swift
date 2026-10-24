@@ -90,6 +90,8 @@ struct TaskDetailModel: Equatable {
     let hero: Hero
     /// The counter row under the hero (shared counter / counts toward).
     var counter: CounterLink? = nil
+    /// ⋯ › "Use as shared counter" is offered (a plain counting task — `canPromoteToCounter`).
+    var canPromoteToCounter = false
     var activeBoards: [BoardRow] = []
     var pastBoards: [BoardRow] = []
     var parents: [Link] = []
