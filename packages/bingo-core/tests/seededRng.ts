@@ -2,9 +2,8 @@
  * Deterministic uniform [0,1) LCG (Numerical Recipes constants).
  *
  * Same seed ⇒ same sequence, in Jest and (ported identically) in XCTest.
- * This is the RNG every golden / cross-platform parity test in the Play
- * transition plan (bingo-core extraction T2) feeds into `placeBoard` so the
- * TS and Swift suites can assert byte-identical expected arrays.
+ * This is the RNG every golden / cross-platform parity test (bingo-core
+ * extraction T2) feeds into `placeBoard` so the TS and Swift suites can assert byte-identical expected arrays.
  *
  * Swift twin (see apps/ios/OYBC/OYBCTests/BoardPlacementTests.swift):
  *   state = state &* 1664525 &+ 1013904223   // wrapping UInt32
@@ -14,8 +13,7 @@
  * `packages/shared/src/algorithms/seededRng.ts` (promoted there in B3, when
  * the wizard's Preview needed a seeded roll in PRODUCTION code). This file is
  * not a re-export of it: `@oybc/shared` depends on `@oybc/bingo-core`, so a
- * dependency the other way would be a package-graph cycle (the Play/Do
- * boundary guardrail — docs/ROADMAP.md Track G), and a relative import
+ * dependency the other way would be a package-graph cycle, and a relative import
  * reaching into another package's `src` is build-tool-fragile. The two copies
  * are pinned byte-for-byte by matching vector tests — `tests/seededRng.test.ts`
  * here and `tests/algorithms/seededRng.test.ts` in shared assert the SAME

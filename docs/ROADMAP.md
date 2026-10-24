@@ -464,8 +464,8 @@ Play OYBC moved to its own repo (`2014sheas/play-oybc`) on 2026-10-22. (The ship
 ## Sequencing summary
 
 - **Priority lane (historical):** G-track T1 → T2 (shipped). T1+T2 were worth doing even if Play stalls — they close a real 4-site duplication and purify the PR #202 seam.
-- **Now / next small PRs (interleave with G-track):** A3 (one-liner), A1, C3 (small, live bugs), A2 (after or with T6 — shared build pipeline), C2.
-- **Then:** B1 → B2 → B3 (in order; B4 rides B3's coattails; if T2 is still in flight, it lands before B touches the wizard-persist files), C1 alongside (generalizing T2's golden-parity pattern; fixtures split bingo-core vs shared per Track G).
+- **Now / next small PRs (historical, interleaved with G-track):** A3 (one-liner), A1, C3 (small, live bugs), A2, C2.
+- **Then:** B1 → B2 → B3 (in order; B4 rides B3's coattails; if T2 is still in flight, it lands before B touches the wizard-persist files), C1 alongside (generalizing T2's golden-parity pattern; fixtures split bingo-core vs shared).
 - **Then:** D1–D3 (after B4 centralizes enqueueing), E2 → E3 (after B-track exposes the seams; T2 already covered the placement seam), F2.
 - **iOS 1.0 launch (2026-10-14 →):** Track L supersedes the order above — L0 ‖ L1 → L2 → L3 → L4 / L4.5 → L5. The former pre-launch gates (A4, E9 — which absorbed E5's CAPTCHA item) live in L0; A8 stays post-1.0.
 - **By directive only:** F6, F9, F10.

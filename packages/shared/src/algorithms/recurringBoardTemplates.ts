@@ -75,8 +75,7 @@ export type SpawnPoolFailureReason =
   | 'unsupported_center';    // centerSquareType === CHOSEN (MVP excludes this)
 
 // `fillableCellCount` now lives in @oybc/bingo-core (imported above) — the
-// same primitive drives the wizard, the spawn path, and Play's server-side
-// board fan-out. Kept as a plain re-import here (not re-exported) so existing
+// same primitive drives the wizard and the spawn path. Kept as a plain re-import here (not re-exported) so existing
 // `recurringBoardTemplates` callers see no change.
 
 /**
