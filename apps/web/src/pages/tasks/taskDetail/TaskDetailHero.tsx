@@ -1,4 +1,4 @@
-import { TaskType, counterDisplayName, formatCountTotal, resolveCountKind, type Task } from '@oybc/shared';
+import { TaskType, canPromoteToCounter, counterDisplayName, formatCountTotal, resolveCountKind, type Task } from '@oybc/shared';
 import { RisoButton, RisoIcon, RisoReturnPill, RisoToolbarPill, type RisoTaskType } from '../../../components/riso';
 import type { TaskDetailData } from '../../../hooks/useTaskDetail';
 import { AnchoredHero } from './AnchoredHero';
@@ -19,6 +19,8 @@ export interface TaskDetailHeroProps {
   chrome: DetailChrome;
   onEdit: () => void;
   onDelete: () => void;
+  /** ⋯ › "Use as shared counter" — offered only when `canPromoteToCounter(task)`. */
+  onUseAsCounter: () => void;
   onOpenTask: (taskId: string) => void;
   onOpenBoard: (boardId: string) => void;
   onOpenCounter: (counterId: string) => void;
@@ -50,7 +52,7 @@ function CounterRow({ task, root, onOpen }: { task: Task; root: Task; onOpen: ()
  *
  * @returns The band.
  */
-export function TaskDetailHero({ task, data, chrome, onEdit, onDelete, onOpenTask, onOpenBoard, onOpenCounter }: TaskDetailHeroProps): React.ReactElement {
+export function TaskDetailHero({ task, data, chrome, onEdit, onDelete, onUseAsCounter, onOpenTask, onOpenBoard, onOpenCounter }: TaskDetailHeroProps): React.ReactElement {
   const tone = heroTone(task);
   const edit = <RisoButton kind="neutral" onClick={onEdit}>Edit</RisoButton>;
   const root = data.counterRoot;
@@ -70,7 +72,11 @@ export function TaskDetailHero({ task, data, chrome, onEdit, onDelete, onOpenTas
           <RisoReturnPill title={chrome.returnTo.title} type={chrome.returnTo.type} onClick={chrome.returnTo.onReturn} />
         ) : <span />}
         <div className={styles.navRight}>
-          <DetailMenu onDelete={onDelete} onOpenCounterSettings={counterId && task.type === TaskType.COUNTING ? () => onOpenCounter(counterId) : undefined} />
+          <DetailMenu
+            onDelete={onDelete}
+            onOpenCounterSettings={counterId && task.type === TaskType.COUNTING ? () => onOpenCounter(counterId) : undefined}
+            onUseAsCounter={canPromoteToCounter(task) ? onUseAsCounter : undefined}
+          />
           {chrome.kind === 'sheet' && <RisoToolbarPill onBand onClick={chrome.onDone}>Done</RisoToolbarPill>}
         </div>
       </div>

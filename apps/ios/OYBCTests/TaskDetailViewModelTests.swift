@@ -454,4 +454,70 @@ final class TaskDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.loadError, "Task not found")
         XCTAssertNil(vm.model)
     }
+
+    // MARK: ⋯ › Use as shared counter
+
+    func test_plainCountingTaskOffersUseAsCounter_linkedRootAndUnitTasksDoNot() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveTask(task("plain", type: .counting, maxCount: 20))
+        var root = task("root", type: .counting, maxCount: nil)
+        root.isCounter = true
+        try db.saveTask(root)
+        var copy = task("copy", type: .counting, maxCount: 10)
+        copy.sharedCounterId = "root"
+        try db.saveTask(copy)
+        var unit = task("unit", type: .counting, maxCount: 3)
+        unit.countsTowardCounterId = "root"
+        try db.saveTask(unit)
+        try db.saveTask(task("n1", type: .normal))
+
+        XCTAssertEqual((await loaded(db, taskId: "plain", expectHero: false)).model?.canPromoteToCounter, true)
+        XCTAssertEqual((await loaded(db, taskId: "root", expectHero: false)).model?.canPromoteToCounter, false)
+        XCTAssertEqual((await loaded(db, taskId: "copy", expectHero: false)).model?.canPromoteToCounter, false)
+        XCTAssertEqual((await loaded(db, taskId: "unit", expectHero: false)).model?.canPromoteToCounter, false)
+        XCTAssertEqual((await loaded(db, taskId: "n1", expectHero: false)).model?.canPromoteToCounter, false)
+    }
+
+    func test_useAsCounter_flagsTheTask_keepsItsCountAndGoal_andTheHeroGainsItsCounterRow() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedCounting(db)
+        var plain = try XCTUnwrap(try db.fetchTask(id: "c1"))
+        plain.currentCount = 7
+        try db.saveTask(plain)
+        let vm = await loaded(db, taskId: "c1")
+        XCTAssertEqual(vm.model?.canPromoteToCounter, true)
+        XCTAssertNil(vm.model?.counter)
+
+        let ok = await vm.useAsCounter()
+        XCTAssertTrue(ok)
+        XCTAssertNil(vm.saveError)
+        let saved = try XCTUnwrap(try db.fetchTask(id: "c1"))
+        XCTAssertEqual(saved.isCounter, true)
+        XCTAssertEqual(saved.currentCount, 7)
+        XCTAssertEqual(saved.maxCount, 20)
+        XCTAssertEqual(saved.version, 2)
+        XCTAssertEqual(try db.fetchPendingSyncItems().filter { $0.entityId == "c1" }.count, 1)
+        await eventually { vm.model?.canPromoteToCounter == false }
+        let link = try XCTUnwrap(vm.model?.counter)
+        XCTAssertEqual(link.counterId, "c1")
+        XCTAssertEqual(link.label, "Shared counter")
+    }
+
+    func test_useAsCounter_refusedWriteSurfacesAnErrorAndFlagsNothing() async throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        var root = task("root", type: .counting, maxCount: nil)
+        root.isCounter = true
+        try db.saveTask(root)
+        var copy = task("copy", type: .counting, maxCount: 10)
+        copy.sharedCounterId = "root"
+        try db.saveTask(copy)
+        let vm = await loaded(db, taskId: "copy", expectHero: false)
+
+        let ok = await vm.useAsCounter()
+        XCTAssertFalse(ok)
+        XCTAssertEqual(vm.saveError, "Could not use this task as a counter.")
+        XCTAssertNotEqual(try XCTUnwrap(try db.fetchTask(id: "copy")).isCounter, true)
+    }
 }

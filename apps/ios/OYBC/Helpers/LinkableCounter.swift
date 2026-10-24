@@ -256,3 +256,18 @@ func classifyCounterCreateMatch(
         memberCount: match.memberCount
     )
 }
+
+/// Whether a task may be used as a shared counter: a live, plain `.counting`
+/// task — not a linked copy (`sharedCounterId`), not already a counter
+/// (`isCounter`), not a unit task (`countsTowardCounterId`: a counter may not
+/// count toward a counter). The guard `promoteTaskToCounter` enforces, read by
+/// the UI that offers it (Task Detail's "Use as shared counter", the counter
+/// sheet's "Use as counter" on a standalone match). TypeScript twin:
+/// `canPromoteToCounter` in `linkableCounter.ts`.
+///
+/// - Parameter task: The task.
+/// - Returns: Whether promotion would be accepted.
+func canPromoteToCounter(_ task: Task) -> Bool {
+    !task.isDeleted && task.type == .counting && task.sharedCounterId == nil
+        && task.isCounter != true && task.countsTowardCounterId == nil
+}

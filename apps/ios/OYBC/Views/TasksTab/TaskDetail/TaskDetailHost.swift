@@ -61,6 +61,7 @@ struct TaskDetailHost: View {
             onUndo: { vm.undo() },
             onOpenTask: onOpenTask, onOpenCounter: onOpenCounter, onOpenBoard: onOpenBoard,
             onOpenCounterSettings: { showCounterSettings = true },
+            onUseAsCounter: { _Concurrency.Task { if await vm.useAsCounter() { onChanged(); onOpenCounter(taskId) } } },
             onDelete: { _Concurrency.Task { if let impact = await vm.computeDeleteImpact() { deleteImpact = impact; showDeleteConfirm = true } } }
         )
     }

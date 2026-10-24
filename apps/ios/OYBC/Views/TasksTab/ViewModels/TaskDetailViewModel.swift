@@ -476,6 +476,7 @@ final class TaskDetailViewModel: ObservableObject {
             kind: RisoTaskKind(taskType: task.type),
             kicker: TaskDetailFormat.kicker(task: task, countKind: family, counterName: counterName, ruleLabel: ruleLabel),
             anchorName: anchorName, anchorTimeframe: anchorTimeframe, hero: hero, counter: counter,
+            canPromoteToCounter: OYBC.canPromoteToCounter(task),
             activeBoards: active, pastBoards: past, parents: parents, subtasks: subtasks, subtaskRule: ruleLabel,
             watches: watches, watchesHeading: watchesHeading, watchesMeta: watchesMeta, watchedBoardId: watchedBoardId,
             templates: snap.templates.map { .init(id: $0.id, name: $0.name) },
@@ -691,6 +692,23 @@ final class TaskDetailViewModel: ObservableObject {
             return true
         } catch {
             saveError = AppDatabase.taskEditErrorMessage(error)
+            return false
+        }
+    }
+
+    /// ⋯ › Use as shared counter: flags the task (`promoteTaskToCounter` — its count, goal and
+    /// placements stay) and reloads, so the hero gains its counter row.
+    func useAsCounter() async -> Bool {
+        let db = database, id = taskId
+        do {
+            try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try db.promoteTaskToCounter(taskId: id, now: AppDatabase.currentTimestamp())
+            }.value
+            saveError = nil
+            await refresh()
+            return true
+        } catch {
+            saveError = "Could not use this task as a counter."
             return false
         }
     }

@@ -397,7 +397,7 @@ export type {
 } from './counterArrivals';
 
 // ===== Shared Counters — "link a new task to an existing counter" match =====
-export { classifyCounterCreateMatch, findLinkableCounter } from './linkableCounter';
+export { canPromoteToCounter, classifyCounterCreateMatch, findLinkableCounter } from './linkableCounter';
 
 export type {
   CounterCreateMatch,

@@ -17,7 +17,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { CompoundEditValidationError, saveTaskEdit } from '../../db/operations';
-import { createCounterTask } from '../../db/operations/tasks';
+import { createCounterTask, promoteTaskToCounter } from '../../db/operations/tasks';
 import { CountKindSwitchError } from '../../db/operations/countKindSwitch';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
@@ -27,6 +27,7 @@ import { GoalEntry } from './GoalEntry';
 import { KindPicker } from './KindPicker';
 import { TemplateField } from './TemplateField';
 import {
+  counterAdoptSubmit,
   counterEditDedupePool,
   counterEditIdentityChanged,
   counterEditSubmit,
@@ -113,8 +114,10 @@ function goalsAsText(goals: CounterSettingsDraft['goals'], kind: CountKind): Def
  *
  * Dedupe (`classifyCounterCreateMatch`) runs per keystroke once both required
  * fields hold text: an `established` match disables the primary and offers
- * "Open {name}"; edit mode checks only a rename, against everything but the
- * counter's own family.
+ * "Open {name}"; a `standalone` match (create mode) disables the primary and
+ * offers "Use as counter" — the existing task is promoted and the typed
+ * settings carried onto it, never a second root for the same pair; edit mode
+ * checks only a rename, against everything but the counter's own family.
  *
  * A modal sheet (backdrop + `role="dialog"` + Escape + Tab trap). Owns its
  * field state and calls the ops directly; the caller reacts to `onCreated` /
@@ -237,9 +240,13 @@ export function CreateCounterSheet({
 
   if (!open) return null;
 
+  // Create mode: an exact pair that is already a standalone counting task is
+  // USED as the counter, never duplicated as a second root.
+  const adopt = !root && match?.kind === 'standalone' ? match : null;
   const fieldsValid = !nounMissing && !verbMissing && !goalsInvalid && match?.kind !== 'established' && !busy;
-  const canCreate = fieldsValid && !startFromInvalid;
+  const canCreate = fieldsValid && !startFromInvalid && !adopt;
   const canSave = fieldsValid;
+  const canAdopt = !nounMissing && !verbMissing && !goalsInvalid && !busy && adopt != null;
 
   /** Marks a required field touched once it has been edited then emptied. */
   function trackEmptied(field: 'noun' | 'verb', before: string, after: string): void {
@@ -290,10 +297,37 @@ export function CreateCounterSheet({
     }
   }
 
+  /**
+   * "Use as counter" on a standalone match: flags the existing task
+   * (`promoteTaskToCounter` — its count, goal and placements stay), then
+   * carries the typed name / templates / defaults onto it through the Task
+   * Detail write (`counterAdoptSubmit`; nothing typed = no second write), and
+   * lands on its Counter Detail like a create does.
+   */
+  async function handleAdopt(): Promise<void> {
+    setSubmitAttempted(true);
+    if (!canAdopt || !adopt) return;
+    genRef.current += 1;
+    const gen = genRef.current;
+    setError(null);
+    setBusy(true);
+    try {
+      const promoted = await promoteTaskToCounter(adopt.task.id);
+      const submit = counterAdoptSubmit(promoted, { verb, noun, settings: draft });
+      if (submit) await saveTaskEdit(promoted.id, submit);
+      if (genRef.current !== gen) return;
+      onCreated?.(promoted.id);
+    } catch {
+      if (genRef.current !== gen) return;
+      setError('Could not use this task as a counter.');
+      setBusy(false);
+    }
+  }
+
   function handleSubmitKey(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    void (root ? handleSave() : handleCreate());
+    void (root ? handleSave() : adopt ? handleAdopt() : handleCreate());
   }
 
   function handleOpenCounter(taskId: string): void {
@@ -447,6 +481,18 @@ export function CreateCounterSheet({
               onClick={() => handleOpenCounter(match.task.id)}
             >
               Open {counterDisplayName(match.task)}
+            </button>
+          </div>
+        )}
+
+        {adopt && (
+          <div className={styles.matchCardEstablished}>
+            <p className={styles.matchTitle}>You&apos;re already counting {trimmedNoun}</p>
+            <p className={styles.matchSub}>
+              {formatCountTotal(adopt.lifetime, resolveCountKind(adopt.task))} all-time · {adopt.task.title}
+            </p>
+            <button type="button" className={styles.matchLinkButton} onClick={() => void handleAdopt()} disabled={!canAdopt}>
+              Use as counter
             </button>
           </div>
         )}

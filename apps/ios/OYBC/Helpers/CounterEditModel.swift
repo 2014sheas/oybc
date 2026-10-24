@@ -81,6 +81,27 @@ enum CounterEditModel {
         )
     }
 
+    /// The patch that carries the counter sheet's typed fields onto a
+    /// standalone counting task being used as the counter ("Use as counter" on
+    /// a standalone match, after `promoteTaskToCounter`): the verb / noun as
+    /// typed (the pair already matched, so at most their case changes) and the
+    /// stored settings — at the task's OWN kind, never a kind switch, never the
+    /// seed. `nil` when nothing would change (no second write). Web twin:
+    /// `counterAdoptSubmit`.
+    ///
+    /// - Parameters:
+    ///   - task: The promoted task (now the counter's root).
+    ///   - draft: The sheet's fields; its kind is ignored.
+    /// - Returns: The patch for `applyTaskEditPatch(taskId: task.id, …)`, or nil.
+    static func adoptPatch(task: Task, draft: Draft) -> EditTaskSheet.Patch? {
+        var own = draft
+        own.kind = resolveCountKind(task.countKind)
+        let p = patch(root: task, draft: own)
+        let unchanged = p.counterSettings == nil && p.title == task.title
+            && p.action == (task.action ?? "") && p.unit == (task.unit ?? "")
+        return unchanged ? nil : p
+    }
+
     /// Whether the draft renames the counter (its verb / noun identity) — only
     /// then does the sheet check for an established counter of that name.
     static func identityChanged(root: Task, draft: Draft) -> Bool {

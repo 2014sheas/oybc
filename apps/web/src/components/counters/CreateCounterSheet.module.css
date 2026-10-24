@@ -100,8 +100,8 @@
   outline-offset: 2px;
 }
 
-/* ─── Dedupe match card — gold only (R1: the green "standalone/promote"
-   card was removed; `established` is the only remaining outcome). ─── */
+/* ─── Dedupe match card — gold for both outcomes: an established counter
+   ("Open …") and a standalone counting task ("Use as counter"). ─── */
 
 .matchCardEstablished {
   margin-top: 12px;
@@ -164,6 +164,13 @@
 .matchLinkButton:focus-visible {
   outline: 3px solid var(--riso-ink-static);
   outline-offset: 2px;
+}
+
+.matchLinkButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
 }
 
 /* Validation / thrown-op error. */

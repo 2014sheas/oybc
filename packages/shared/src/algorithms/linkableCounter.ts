@@ -153,3 +153,27 @@ export function classifyCounterCreateMatch(
     memberCount: match.memberCount,
   };
 }
+
+/**
+ * Whether a task may be used as a shared counter: a live, plain COUNTING task
+ * — not a linked copy (`sharedCounterId`), not already a counter
+ * (`isCounter`), not a unit task (`countsTowardCounterId`: a counter may not
+ * count toward a counter). The guard `promoteTaskToCounter` enforces, read
+ * by the UI that offers it (Task Detail's "Use as shared counter", the hub
+ * sheet's "Use as counter" on a standalone match). Swift twin:
+ * `canPromoteToCounter(_:)` in `LinkableCounter.swift`.
+ *
+ * @param task - The task.
+ * @returns Whether promotion would be accepted.
+ */
+export function canPromoteToCounter(
+  task: Pick<Task, 'type' | 'isDeleted' | 'sharedCounterId' | 'isCounter' | 'countsTowardCounterId'>,
+): boolean {
+  return (
+    !task.isDeleted &&
+    task.type === TaskType.COUNTING &&
+    task.sharedCounterId == null &&
+    task.isCounter !== true &&
+    task.countsTowardCounterId == null
+  );
+}

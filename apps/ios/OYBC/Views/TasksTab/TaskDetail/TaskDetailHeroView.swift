@@ -127,12 +127,17 @@ struct TaskDetailHeroView: View {
         .frame(minHeight: 44)
     }
 
-    /// The ⋯ menu: Open counter settings (counting with a counter) · Delete task….
+    /// The ⋯ menu: Open counter settings (counting with a counter) or Use as shared
+    /// counter (a plain counting task) · Delete task….
     /// "Place on a board…" is omitted — no placement flow is reachable from here.
     private var optionsMenu: some View {
         Menu {
             if model.kind == .counting, model.counter != nil {
                 Button("Open counter settings", systemImage: "slider.horizontal.3", action: actions.onOpenCounterSettings)
+                Divider()
+            }
+            if model.canPromoteToCounter {
+                Button("Use as shared counter", systemImage: "arrow.left.arrow.right", action: actions.onUseAsCounter)
                 Divider()
             }
             Button("Delete task…", systemImage: "trash", role: .destructive, action: actions.onDelete)

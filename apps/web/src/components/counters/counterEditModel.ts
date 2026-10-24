@@ -97,6 +97,26 @@ export function counterEditSubmit(root: Task, draft: CounterEditDraft): TaskEdit
 }
 
 /**
+ * The `saveTaskEdit` submit that carries the hub sheet's typed fields onto a
+ * standalone counting task being used as the counter ("Use as counter" on a
+ * standalone match, after `promoteTaskToCounter`): the verb / noun as typed
+ * (the pair already matched, so at most their case changes) and the stored
+ * settings — at the task's OWN kind, never a kind switch, never the seed.
+ * `null` when nothing would change (no second write, no version bump).
+ *
+ * @param task - The promoted task (now the counter's root).
+ * @param draft - The sheet's verb / noun / settings; its kind is ignored.
+ * @returns The submit for `saveTaskEdit(task.id, …)`, or `null`.
+ */
+export function counterAdoptSubmit(task: Task, draft: Omit<CounterEditDraft, 'kind'>): TaskEditSubmit | null {
+  const submit = counterEditSubmit(task, { ...draft, kind: resolveCountKind(task) });
+  const onlyIdentity = Object.keys(submit).every((k) => k === 'title' || k === 'action' || k === 'unit');
+  const unchanged =
+    onlyIdentity && submit.title === task.title && submit.action === (task.action ?? '') && submit.unit === (task.unit ?? '');
+  return unchanged ? null : submit;
+}
+
+/**
  * Whether the draft renames the counter (its verb / noun identity) — only
  * then does the sheet check for an established counter of that name.
  *

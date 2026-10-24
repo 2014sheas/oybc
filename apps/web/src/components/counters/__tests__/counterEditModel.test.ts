@@ -4,12 +4,13 @@ import { TaskType, type CounterSettingsDraft, type Task } from '@oybc/shared';
 import { db } from '../../../db/internal';
 import { saveTaskEdit } from '../../../db/operations/compoundStructureEdit';
 import {
+  counterAdoptSubmit,
   counterEditDedupePool,
   counterEditIdentityChanged,
   counterEditSubmit,
   seedCounterEditDraft,
 } from '../counterEditModel';
-import { createCounterTask } from '../../../db/operations/tasks';
+import { createCounterTask, promoteTaskToCounter } from '../../../db/operations/tasks';
 import { resolveCreditedCounterName } from '../../boardPlaySharedCounterUtils';
 
 const T0 = '2026-10-01T00:00:00.000Z';
@@ -173,5 +174,46 @@ describe('the counter sheet save goes through saveTaskEdit (the Task Detail writ
     expect(saved).toMatchObject({ title: 'Books', counterName: 'Books' });
     expect('titleTemplatePlural' in saved).toBe(false);
     expect('timeframeGoals' in saved).toBe(false);
+  });
+});
+
+describe('counterAdoptSubmit ("Use as counter" on a standalone match)', () => {
+  /** The standalone the hub sheet matched: an auto-titled goaled counting task with 12 all-time. */
+  const standalone = (over: Partial<Task> = {}): Task =>
+    root({ id: 'plain', isCounter: false, maxCount: 5, title: 'Run 5 miles', ...over });
+
+  it('is null when the sheet typed nothing beyond the matched pair', () => {
+    expect(counterAdoptSubmit(standalone(), { verb: 'Run', noun: 'miles', settings: UNSET })).toBeNull();
+    // Whitespace and an exact-case pair are still "nothing typed".
+    expect(counterAdoptSubmit(standalone(), { verb: ' Run ', noun: 'miles ', settings: { ...UNSET, name: '   ' } })).toBeNull();
+  });
+
+  it('carries the typed settings and re-renders an auto title, at the task\'s OWN kind', () => {
+    const submit = counterAdoptSubmit(standalone({ countKind: 'continuous', maxCount: 2.5, title: 'Run 2.5 miles' }), {
+      verb: 'Run', noun: 'miles', settings: { ...UNSET, name: 'Mileage', plural: 'Jog #N miles', goals: { weekly: 20 } },
+    });
+    expect(submit).toEqual({
+      title: 'Jog 2.5 miles', action: 'Run', unit: 'miles',
+      counterName: 'Mileage', titleTemplatePlural: 'Jog #N miles', timeframeGoals: { weekly: 20 },
+    });
+    expect(submit).not.toHaveProperty('countKind');
+  });
+
+  it('a re-cased pair is an edit; a custom title is kept', () => {
+    const recased = counterAdoptSubmit(standalone(), { verb: 'run', noun: 'Miles', settings: UNSET });
+    expect(recased).toEqual({ title: 'run 5 Miles', action: 'run', unit: 'Miles' });
+    expect(counterAdoptSubmit(standalone({ title: 'Morning miles' }), { verb: 'run', noun: 'miles', settings: UNSET }))
+      .toEqual({ title: 'Morning miles', action: 'run', unit: 'miles' });
+  });
+
+  it('after promoteTaskToCounter the submit lands through saveTaskEdit: flag, count, goal and placements kept', async () => {
+    await db.tasks.add(standalone({ currentCount: 12 }));
+    const promoted = await promoteTaskToCounter('plain');
+    expect(promoted.isCounter).toBe(true);
+    const submit = counterAdoptSubmit(promoted, { verb: 'Run', noun: 'miles', settings: { ...UNSET, name: 'Mileage' } });
+    await saveTaskEdit('plain', submit!);
+    const saved = (await db.tasks.get('plain'))!;
+    expect(saved).toMatchObject({ isCounter: true, counterName: 'Mileage', currentCount: 12, maxCount: 5, title: 'Run 5 miles' });
+    expect(resolveCreditedCounterName(saved)).toBe('Mileage');
   });
 });

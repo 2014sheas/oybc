@@ -148,7 +148,8 @@ final class CountersHubSnapshotTests: XCTestCase {
         match: CounterCreateMatch? = nil,
         startFromInvalid: Bool = false,
         isEditing: Bool = false,
-        kindLock: KindPickerLock = .none
+        kindLock: KindPickerLock = .none,
+        onUseAsCounter: (() -> Void)? = nil
     ) -> some View {
         NavigationStack {
             ScrollView {
@@ -158,7 +159,8 @@ final class CountersHubSnapshotTests: XCTestCase {
                     startFromInvalid: startFromInvalid,
                     match: match,
                     isEditing: isEditing,
-                    kindLock: kindLock
+                    kindLock: kindLock,
+                    onUseAsCounter: onUseAsCounter
                 )
                 .padding(16)
             }
@@ -284,6 +286,32 @@ final class CountersHubSnapshotTests: XCTestCase {
     func testNewCounterSheetEstablishedMatchDark() {
         let form = CounterSheetForm(verb: "Do", noun: "push-ups")
         assertSheet(sheetHost(form, match: establishedMatch), height: 1020, dark: true)
+    }
+
+    /// A plain counting task with the typed pair: the gold card names it and
+    /// offers "Use as counter" (the existing task becomes the counter — never
+    /// a second root for the same pair).
+    private var standaloneMatch: CounterCreateMatch {
+        let now = "2026-02-01T00:00:00.000"
+        let plain = Task(
+            id: "plain", userId: "u1", title: "Do 50 push-ups", type: .counting,
+            action: "Do", unit: "push-ups", maxCount: 50,
+            totalCompletions: 0, totalInstances: 0,
+            currentCount: 120,
+            createdAt: now, updatedAt: now,
+            version: 1, isDeleted: false
+        )
+        return CounterCreateMatch(kind: .standalone, task: plain, lifetime: 120, memberCount: 1)
+    }
+
+    func testNewCounterSheetStandaloneMatchLight() {
+        let form = CounterSheetForm(verb: "Do", noun: "push-ups")
+        assertSheet(sheetHost(form, match: standaloneMatch, onUseAsCounter: {}), height: 1020, dark: false)
+    }
+
+    func testNewCounterSheetStandaloneMatchDark() {
+        let form = CounterSheetForm(verb: "Do", noun: "push-ups")
+        assertSheet(sheetHost(form, match: standaloneMatch, onUseAsCounter: {}), height: 1020, dark: true)
     }
 
     // MARK: - Detail — "Show expired tasks" toggle (the hub's control, RC9)

@@ -220,4 +220,24 @@ final class LinkableCounterTests: XCTestCase {
         state.pairChanged(action: "Do", unit: "pushups", kind: .discrete, tasks: [root, linker])
         XCTAssertEqual(state.linked?.counterId, "hub")
     }
+
+    // MARK: - canPromoteToCounter ("Use as shared counter" eligibility; TS twin in linkableCounter.test.ts)
+
+    func testCanPromoteAcceptsALivePlainCountingTask() {
+        XCTAssertTrue(canPromoteToCounter(task("plain", action: "Do", unit: "push-ups")))
+        var goaled = task("goaled", action: "Do", unit: "push-ups")
+        goaled.maxCount = 50
+        XCTAssertTrue(canPromoteToCounter(goaled))
+    }
+
+    func testCanPromoteRefusesWhatPromoteTaskToCounterRefuses() {
+        XCTAssertFalse(canPromoteToCounter(task("copy", action: "Do", unit: "push-ups", sharedCounterId: "root")))
+        XCTAssertFalse(canPromoteToCounter(task("root", action: "Do", unit: "push-ups", isCounter: true)))
+        var unit = task("unit", action: "Do", unit: "push-ups")
+        unit.countsTowardCounterId = "root"
+        XCTAssertFalse(canPromoteToCounter(unit))
+        XCTAssertFalse(canPromoteToCounter(task("normal", type: .normal)))
+        XCTAssertFalse(canPromoteToCounter(task("compound", type: .compound)))
+        XCTAssertFalse(canPromoteToCounter(task("gone", action: "Do", unit: "push-ups", isDeleted: true)))
+    }
 }

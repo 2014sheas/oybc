@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Task } from '@oybc/shared';
 import { CompoundEditValidationError, saveTaskEdit } from '../../db/operations';
-import { computeTaskDeletionImpact, deleteTaskWithCascade, type TaskDeletionImpact } from '../../db/operations/tasks';
+import { computeTaskDeletionImpact, deleteTaskWithCascade, promoteTaskToCounter, type TaskDeletionImpact } from '../../db/operations/tasks';
 import { useTaskDetail } from '../../hooks/useTaskDetail';
 import { TaskEditSheet } from './TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './TaskConfirmDeleteDialog';
@@ -54,6 +54,18 @@ export function TaskDetailContent({
     }
   };
 
+  /** ⋯ › Use as shared counter: flags the task (`promoteTaskToCounter`) and lands on its Counter Detail. */
+  const handleUseAsCounter = async (): Promise<void> => {
+    setError(null);
+    try {
+      await promoteTaskToCounter(task.id);
+      onChanged();
+      onOpenCounter(task.id);
+    } catch (e) {
+      setError(`Could not use this task as a counter: ${(e as Error).message}`);
+    }
+  };
+
   const confirmDelete = async (): Promise<void> => {
     setError(null);
     try {
@@ -71,6 +83,7 @@ export function TaskDetailContent({
     <div className={styles.shell}>
       <TaskDetailHero
         task={task} data={data} chrome={chrome} onEdit={() => setIsEditing(true)} onDelete={() => void handleDelete()}
+        onUseAsCounter={() => void handleUseAsCounter()}
         onOpenTask={onOpenTask} onOpenBoard={onOpenBoard} onOpenCounter={onOpenCounter}
       />
       <TaskDetailSections
