@@ -638,6 +638,73 @@ final class TutorialCoordinatorTests: XCTestCase {
         XCTAssertEqual(try db.fetchTasks(userId: userId).count, 1, "Floss stays in the library")
     }
 
+    func test_resume_onLesson2sNewStepsAndTheTellsRendersTheStepsState() throws {
+        for (step, screen, lit) in [
+            (L2.tellSetup, TutorialCreateBoardState.Screen.setup, [TutorialControlID]()),
+            (L2.window, .setup, [.windowChip]),
+            (L2.size, .setup, [.sizeCard3]),
+            (L2.setupNext, .setup, [.taskCountLabel, .centerRow, .setupNext]),
+            (L2.tellSources, .tasks, []),
+            (L2.tellTune, .tasks, []),
+        ] {
+            var progress = TutorialProgress.empty
+            progress.set(.createBoard, .inProgress(step: step))
+            let (coach, _) = try makeCoordinator(progress: progress)
+            coach.start(.createBoard)
+            XCTAssertEqual(coach.session?.step, step)
+            XCTAssertEqual(coach.session?.resumed, true)
+            guard case .createBoard(let s) = coach.session?.state else { return XCTFail("step \(step)") }
+            XCTAssertEqual(s.screen, screen, "step \(step)")
+            XCTAssertEqual(ringed(coach), lit, "step \(step)")
+            XCTAssertEqual(s.timeframePicked, step >= L2.window, "step \(step)")
+            XCTAssertEqual(s.sizePicked, step >= L2.setupNext, "step \(step)")
+            XCTAssertEqual(s.poolAdded, step >= L2.tellTune, "step \(step)")
+            XCTAssertFalse(s.sourceSheetOpen)
+            if TutorialCatalog.createBoardSteps[step].isTell {
+                XCTAssertNotNil(coach.session?.title)
+                coach.next()
+                XCTAssertEqual(coach.session?.step, step + 1, "a resumed tell still takes Next")
+            }
+        }
+        var progress = TutorialProgress.empty
+        progress.set(.completeBoard, .inProgress(step: L3.tellLines))
+        let (coach, _) = try makeCoordinator(progress: progress)
+        coach.start(.completeBoard)
+        XCTAssertEqual(coach.session?.title, "Lines and the Greenlog")
+        XCTAssertNil(l3(coach)?.moment)
+        XCTAssertEqual(l3(coach)?.ringedSlots, [3, 4, 5])
+        coach.next()
+        XCTAssertEqual(coach.session?.step, L3.finale)
+        XCTAssertEqual(l3(coach)?.finaleTaps, 0, "a resumed finale starts with the catalog's line")
+        XCTAssertNil(coach.session?.state.stepOverride(step: L3.finale))
+    }
+
+    func test_momentButtonsReserve_followsTheShippedOverlaysButtonBlock() {
+        let bingo = TutorialSession(lesson: .completeBoard, step: L3.bingoMoment, resumed: false, state: .completeBoard(.implied(step: L3.bingoMoment)))
+        XCTAssertEqual(
+            TutorialCoachGeometry.momentButtonsReserve(session: bingo),
+            RisoMomentOverlay.buttonsBlockHeight(kind: .bingo) + TutorialCoachGeometry.markGap
+        )
+        var greenlogState = TutorialCompleteBoardState.implied(step: L3.finale)
+        for slot in greenlogState.remaining { _ = greenlogState.apply(.squareTapped(slot), step: L3.finale) }
+        XCTAssertEqual(greenlogState.moment, .greenlog)
+        let greenlog = TutorialSession(lesson: .completeBoard, step: L3.finale, resumed: false, state: .completeBoard(greenlogState))
+        XCTAssertEqual(
+            TutorialCoachGeometry.momentButtonsReserve(session: greenlog),
+            RisoMomentOverlay.buttonsBlockHeight(kind: .greenlog) + TutorialCoachGeometry.markGap
+        )
+        XCTAssertGreaterThan(RisoMomentOverlay.buttonsBlockHeight(kind: .greenlog), RisoMomentOverlay.buttonsBlockHeight(kind: .bingo), "the Greenlog's quiet link adds a row")
+    }
+
+    func test_coachGeometry_aTallMarkGoesAboveWhenBelowOnlyFitsTheOneLineEstimate() {
+        // A control near the bottom: 90pt of room below, plenty above.
+        let target = CGRect(x: 20, y: 500, width: 200, height: 44)
+        let container: CGFloat = 544 + 18 + 90
+        XCTAssertTrue(TutorialCoachGeometry.placesBelow(target: target, containerHeight: container, bottomReserve: 0, topReserve: 0))
+        XCTAssertFalse(TutorialCoachGeometry.placesBelow(target: target, containerHeight: container, bottomReserve: 0, topReserve: 0, markHeight: 110), "a mark with a note no longer fits below")
+        XCTAssertTrue(TutorialCoachGeometry.fits(target: target, containerHeight: container, bottomReserve: 0, topReserve: 0, markHeight: 110))
+    }
+
     func test_resume_onTheBingoStepReplaysTheMoment() throws {
         var progress = TutorialProgress.empty
         progress.set(.completeBoard, .inProgress(step: L3.bingoMoment))

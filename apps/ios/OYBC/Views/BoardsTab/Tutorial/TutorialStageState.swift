@@ -405,10 +405,9 @@ struct TutorialCompleteBoardState: Equatable {
     var squareSheetOpen = false
     var undoText: String?
     var holdMenuOpen = false
-    /// A shipped moment is on screen (under the bar, no scrim).
+    /// A shipped moment is on screen (under the bar, no scrim). The Bingo plays
+    /// once; later lines ring gold with no moment.
     var moment: Moment?
-    /// The Bingo played; later lines ring gold with no moment.
-    var bingoPlayed = false
     /// The lines the finale's last tap closed, for its "Two left." note.
     var lastClosedLines: [[Int]] = []
 
@@ -441,10 +440,7 @@ struct TutorialCompleteBoardState: Equatable {
             s.done.insert(TutorialSampleWeek.Slot.read)
             s.readCount = TutorialSampleWeek.grid[TutorialSampleWeek.Slot.read].count + 2 * TutorialSampleWeek.chip
         }
-        if step >= Step.bingoMoment {
-            s.done.insert(TutorialSampleWeek.Slot.tidy)
-            s.bingoPlayed = true
-        }
+        if step >= Step.bingoMoment { s.done.insert(TutorialSampleWeek.Slot.tidy) }
         s.toastVisible = step == Step.toast
         s.squareSheetOpen = step == Step.chips || step == Step.undoStrip
         s.undoText = step == Step.undoStrip ? undoLine : nil
@@ -549,7 +545,6 @@ struct TutorialCompleteBoardState: Equatable {
             holdMenuOpen = false
             done.insert(TutorialSampleWeek.Slot.tidy)
             moment = .bingo
-            bingoPlayed = true
             return .advanced
         case (.squareTapped(let slot), Step.finale) where remaining.contains(slot):
             let before = completeLines

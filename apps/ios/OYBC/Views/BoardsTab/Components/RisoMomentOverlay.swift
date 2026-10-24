@@ -94,7 +94,7 @@ struct RisoMomentOverlay: View {
             }
             .padding(.horizontal, 24)
             .padding(.top, 20)
-            .padding(.bottom, 20)
+            .padding(.bottom, Self.bottomPadding)
         }
         .onAppear {
             guard beatOverride == nil, !reduceMotion else { return }
@@ -230,8 +230,26 @@ struct RisoMomentOverlay: View {
         .accessibilityLabel("\(streak) \(streakUnitLabel(timeframe).lowercased()) streak")
     }
 
+    /// A large `RisoButton`'s rendered height (17pt label + 16pt vertical padding).
+    static let largeButtonHeight: CGFloat = 51
+    /// Gap between the buttons.
+    static let buttonSpacing: CGFloat = 10
+    /// The quiet text link under the Greenlog's buttons (`Back to board`).
+    static let quietLinkHeight: CGFloat = 30
+    /// Padding under the button block (the body's `.padding(.bottom, 20)`).
+    static let bottomPadding: CGFloat = 20
+
+    /// Height of the button block plus the bottom padding, so a layer drawn
+    /// over the moment (the tutorial's coach mark) can sit clear of the
+    /// buttons: two large buttons, and on the Greenlog the quiet link.
+    /// - Parameter kind: Which moment is showing.
+    static func buttonsBlockHeight(kind: MomentTrigger.Kind) -> CGFloat {
+        let two = largeButtonHeight * 2 + buttonSpacing
+        return bottomPadding + (kind == .greenlog ? two + buttonSpacing + quietLinkHeight : two)
+    }
+
     private var buttons: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Self.buttonSpacing) {
             if tutorialButtons && kind == .greenlog {
                 RisoButton(title: "Start my first board", kind: .primary, fullWidth: true, large: true, action: onNewBoard)
                 Button(action: onBack) {

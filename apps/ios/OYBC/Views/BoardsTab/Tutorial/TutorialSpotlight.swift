@@ -66,42 +66,42 @@ enum TutorialCoachGeometry {
     static let tellInset: CGFloat = 28
 
     /// Room left under the mark while a shipped moment plays, so it sits above
-    /// the moment's buttons (`RisoMomentOverlay.buttons`: large buttons 51pt,
-    /// 10pt apart, the Greenlog's quiet text link, 20pt bottom padding) with
-    /// the usual gap.
+    /// the moment's buttons (`RisoMomentOverlay.buttonsBlockHeight`) with the
+    /// usual gap.
     static func momentButtonsReserve(session: TutorialSession) -> CGFloat {
         let greenlog: Bool = {
             if case .completeBoard(let s) = session.state { return s.moment == .greenlog }
             return false
         }()
-        let buttons: CGFloat = greenlog ? (51 + 10 + 51 + 10 + 30) : (51 + 10 + 51)
-        return 20 + buttons + markGap
+        return RisoMomentOverlay.buttonsBlockHeight(kind: greenlog ? .greenlog : .bingo) + markGap
     }
-    /// Estimated mark height used only to choose above vs below.
+    /// The smallest mark (one instruction line, no note); the floor for the
+    /// measured height the overlay feeds in.
     static let markEstimate: CGFloat = 72
 
     /// Whether the mark goes below the target. Prefers below; goes above only
     /// when below has no room and above does.
-    static func placesBelow(target: CGRect, containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat) -> Bool {
+    /// - Parameter markHeight: The mark's rendered height (the estimate until measured).
+    static func placesBelow(target: CGRect, containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat, markHeight: CGFloat = markEstimate) -> Bool {
         let roomBelow = containerHeight - bottomReserve - target.maxY - markGap
         let roomAbove = target.minY - topReserve - markGap
-        if roomBelow >= markEstimate { return true }
-        return !(roomAbove >= markEstimate)
+        if roomBelow >= markHeight { return true }
+        return !(roomAbove >= markHeight)
     }
 
     /// Whether a mark fits either above or below `target`.
-    static func fits(target: CGRect, containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat) -> Bool {
-        containerHeight - bottomReserve - target.maxY - markGap >= markEstimate
-            || target.minY - topReserve - markGap >= markEstimate
+    static func fits(target: CGRect, containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat, markHeight: CGFloat = markEstimate) -> Bool {
+        containerHeight - bottomReserve - target.maxY - markGap >= markHeight
+            || target.minY - topReserve - markGap >= markHeight
     }
 
     /// The rect the mark is placed against: the union of every ringed control,
     /// unless that union leaves no room above or below, in which case the
     /// first control alone.
-    static func placementTarget(lit: [CGRect], containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat) -> CGRect {
+    static func placementTarget(lit: [CGRect], containerHeight: CGFloat, bottomReserve: CGFloat, topReserve: CGFloat, markHeight: CGFloat = markEstimate) -> CGRect {
         guard let first = lit.first else { return .zero }
         let union = lit.dropFirst().reduce(first) { $0.union($1) }
-        if fits(target: union, containerHeight: containerHeight, bottomReserve: bottomReserve, topReserve: topReserve) {
+        if fits(target: union, containerHeight: containerHeight, bottomReserve: bottomReserve, topReserve: topReserve, markHeight: markHeight) {
             return union
         }
         return first
@@ -160,6 +160,10 @@ struct TutorialSpotlightOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = 0
     @State private var keyboardHeight: CGFloat = 0
+    /// The coach mark's rendered height, so above-vs-below is decided on the
+    /// real card (a note line or a long instruction makes it taller than the
+    /// one-line estimate).
+    @State private var measuredMark: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -195,12 +199,13 @@ struct TutorialSpotlightOverlay: View {
         // at it. Several primaries (the finale's squares): no notch.
         let notchRects = readOnly.isEmpty ? (primaries.count == 1 ? primaries : []) : [readOnly[0]]
         let hasTarget = !ringed.isEmpty
+        let markHeight = max(measuredMark, TutorialCoachGeometry.markEstimate)
         let target = TutorialCoachGeometry.placementTarget(
             lit: readOnly.isEmpty && primaries.count == 1 ? primaries : ringed,
-            containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0
+            containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0, markHeight: markHeight
         )
         let below = hasTarget
-            ? TutorialCoachGeometry.placesBelow(target: target, containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0)
+            ? TutorialCoachGeometry.placesBelow(target: target, containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0, markHeight: markHeight)
             : false
         let notch: TutorialCoachMark.Notch = notchRects.count == 1 ? (below ? .up : .down) : .none
         let notchOffset = notchRects.count == 1 ? TutorialCoachGeometry.notchOffset(targetMidX: notchRects[0].midX, containerWidth: geo.size.width) : 0
@@ -285,7 +290,19 @@ struct TutorialSpotlightOverlay: View {
             notchOffset: notchOffset,
             onNext: { coach.next() }
         )
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: TutorialMarkHeightKey.self, value: proxy.size.height)
+            }
+        )
+        .onPreferenceChange(TutorialMarkHeightKey.self) { measuredMark = $0 }
     }
+}
+
+/// The coach mark's rendered height (fed back into the above-vs-below choice).
+private struct TutorialMarkHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// The second ring that expands and fades once per outside tap.
