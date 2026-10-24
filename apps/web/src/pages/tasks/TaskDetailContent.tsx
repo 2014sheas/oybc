@@ -61,8 +61,8 @@ export function TaskDetailContent({
       await promoteTaskToCounter(task.id);
       onChanged();
       onOpenCounter(task.id);
-    } catch (e) {
-      setError(`Could not use this task as a counter: ${(e as Error).message}`);
+    } catch {
+      setError('Could not use this task as a counter.');
     }
   };
 

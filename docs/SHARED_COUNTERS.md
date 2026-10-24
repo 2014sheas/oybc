@@ -303,8 +303,13 @@ events and placements) from two places:
    `CounterEditModel.adoptPatch`: the pair as typed — at most its case
    changes — and the stored settings, at the task's **own kind**, never a kind
    switch or the seed; nothing typed = no second write), and the caller
-   navigates to its detail like a create. Edit mode is unchanged (a rename
-   onto a standalone pair still saves).
+   navigates to its detail like a create. While the match stands, the kind
+   picker is locked to the task's kind (so the Defaults cells parse in that
+   kind's grammar) and "Start from" hides. A standalone the write would
+   refuse — a unit task — classifies as no match, so Create proceeds instead
+   of a dead-end card. A failed settings write after the promote reads
+   "Settings not saved." and leaves the sheet open on the counter it made.
+   Edit mode is unchanged (a rename onto a standalone pair still saves).
 
 ### Amount logging
 

@@ -149,6 +149,7 @@ final class CountersHubSnapshotTests: XCTestCase {
         startFromInvalid: Bool = false,
         isEditing: Bool = false,
         kindLock: KindPickerLock = .none,
+        adopting: Bool = false,
         onUseAsCounter: (() -> Void)? = nil
     ) -> some View {
         NavigationStack {
@@ -160,6 +161,7 @@ final class CountersHubSnapshotTests: XCTestCase {
                     match: match,
                     isEditing: isEditing,
                     kindLock: kindLock,
+                    adopting: adopting,
                     onUseAsCounter: onUseAsCounter
                 )
                 .padding(16)
@@ -290,7 +292,8 @@ final class CountersHubSnapshotTests: XCTestCase {
 
     /// A plain counting task with the typed pair: the gold card names it and
     /// offers "Use as counter" (the existing task becomes the counter — never
-    /// a second root for the same pair).
+    /// a second root for the same pair); the kind picker is locked to the
+    /// task's kind and "Start from" hides.
     private var standaloneMatch: CounterCreateMatch {
         let now = "2026-02-01T00:00:00.000"
         let plain = Task(
@@ -306,12 +309,12 @@ final class CountersHubSnapshotTests: XCTestCase {
 
     func testNewCounterSheetStandaloneMatchLight() {
         let form = CounterSheetForm(verb: "Do", noun: "push-ups")
-        assertSheet(sheetHost(form, match: standaloneMatch, onUseAsCounter: {}), height: 1020, dark: false)
+        assertSheet(sheetHost(form, match: standaloneMatch, kindLock: .all, adopting: true, onUseAsCounter: {}), height: 960, dark: false)
     }
 
     func testNewCounterSheetStandaloneMatchDark() {
         let form = CounterSheetForm(verb: "Do", noun: "push-ups")
-        assertSheet(sheetHost(form, match: standaloneMatch, onUseAsCounter: {}), height: 1020, dark: true)
+        assertSheet(sheetHost(form, match: standaloneMatch, kindLock: .all, adopting: true, onUseAsCounter: {}), height: 960, dark: true)
     }
 
     // MARK: - Detail — "Show expired tasks" toggle (the hub's control, RC9)

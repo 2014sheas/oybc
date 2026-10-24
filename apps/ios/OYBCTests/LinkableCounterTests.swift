@@ -188,6 +188,15 @@ final class LinkableCounterTests: XCTestCase {
         XCTAssertEqual(result?.memberCount, 1)
     }
 
+    func testClassifyReturnsNilForAStandaloneThePromoteWriteWouldRefuse() {
+        var unit = task("unit", action: "Squats", unit: "reps", currentCount: 5)
+        unit.countsTowardCounterId = "root"
+        XCTAssertNil(classifyCounterCreateMatch(action: "Squats", unit: "reps", tasks: [unit]))
+        // Established matches are untouched by the gate.
+        let flagged = task("flagged", action: "Squats", unit: "reps", isCounter: true)
+        XCTAssertEqual(classifyCounterCreateMatch(action: "Squats", unit: "reps", tasks: [flagged, unit])?.kind, .established)
+    }
+
     func testClassifyReturnsNilWhenNothingMatches() {
         let other = task("other", action: "Push-ups", unit: "reps")
         let result = classifyCounterCreateMatch(action: "Lunges", unit: "reps", tasks: [other])

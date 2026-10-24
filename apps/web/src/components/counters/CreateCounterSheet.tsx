@@ -238,11 +238,20 @@ export function CreateCounterSheet({
     [trimmedVerb, trimmedNoun, tasks, root, renamed],
   );
 
+  // Create mode: an exact pair that is already a standalone counting task is
+  // USED as the counter, never duplicated as a second root. Its kind is the
+  // task's own: the picker follows it (locked) and "Start from" hides — the
+  // Defaults cells then parse in that kind's grammar.
+  const adopt = !root && match?.kind === 'standalone' ? match : null;
+  const adoptKind = adopt ? resolveCountKind(adopt.task) : null;
+  useEffect(() => {
+    if (adoptKind && adoptKind !== countKind) handleKindChange(adoptKind);
+    // Only when the matched task (and so its kind) changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adoptKind, adopt?.task.id]);
+
   if (!open) return null;
 
-  // Create mode: an exact pair that is already a standalone counting task is
-  // USED as the counter, never duplicated as a second root.
-  const adopt = !root && match?.kind === 'standalone' ? match : null;
   const fieldsValid = !nounMissing && !verbMissing && !goalsInvalid && match?.kind !== 'established' && !busy;
   const canCreate = fieldsValid && !startFromInvalid && !adopt;
   const canSave = fieldsValid;
@@ -311,17 +320,28 @@ export function CreateCounterSheet({
     const gen = genRef.current;
     setError(null);
     setBusy(true);
+    let promoted: Task;
     try {
-      const promoted = await promoteTaskToCounter(adopt.task.id);
-      const submit = counterAdoptSubmit(promoted, { verb, noun, settings: draft });
-      if (submit) await saveTaskEdit(promoted.id, submit);
-      if (genRef.current !== gen) return;
-      onCreated?.(promoted.id);
+      promoted = await promoteTaskToCounter(adopt.task.id);
     } catch {
       if (genRef.current !== gen) return;
       setError('Could not use this task as a counter.');
       setBusy(false);
+      return;
     }
+    // The task is the counter now; a failed settings write leaves the sheet
+    // open on that state (the card turns into "Open …" as the pool refreshes).
+    try {
+      const submit = counterAdoptSubmit(promoted, { verb, noun, settings: draft });
+      if (submit) await saveTaskEdit(promoted.id, submit);
+    } catch {
+      if (genRef.current !== gen) return;
+      setError('Settings not saved.');
+      setBusy(false);
+      return;
+    }
+    if (genRef.current !== gen) return;
+    onCreated?.(promoted.id);
   }
 
   function handleSubmitKey(e: React.KeyboardEvent<HTMLInputElement>): void {
@@ -375,7 +395,7 @@ export function CreateCounterSheet({
         {root ? (
           <KindPicker value={countKind} lock={kindPickerLock('edit', resolveCountKind(root))} onChange={requestKind} />
         ) : (
-          <KindPicker value={countKind} lock="none" onChange={handleKindChange} />
+          <KindPicker value={countKind} lock={adopt ? 'all' : 'none'} onChange={handleKindChange} />
         )}
 
         <label className={styles.fieldLabel} htmlFor="create-counter-noun">
@@ -450,7 +470,7 @@ export function CreateCounterSheet({
           />
         </div>
 
-        {!root && (
+        {!root && !adopt && (
           <>
             <label className={styles.fieldLabel} htmlFor="create-counter-starting-count">
               Start from (optional)

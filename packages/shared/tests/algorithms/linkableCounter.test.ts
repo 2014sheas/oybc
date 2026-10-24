@@ -160,6 +160,14 @@ describe('classifyCounterCreateMatch (P5 hub-create dedupe)', () => {
     expect(result!.memberCount).toBe(1);
   });
 
+  it('a standalone the promote write would refuse (a unit task) is null — create proceeds instead of a dead-end card', () => {
+    const unit: Task = { ...toTask({ id: 'unit', action: 'Squats', unit: 'reps', currentCount: 5 }), countsTowardCounterId: 'root' };
+    expect(classifyCounterCreateMatch({ action: 'Squats', unit: 'reps' }, [unit])).toBeNull();
+    // Established matches are untouched by the gate.
+    const flagged = toTask({ id: 'flagged', action: 'Squats', unit: 'reps', isCounter: true });
+    expect(classifyCounterCreateMatch({ action: 'Squats', unit: 'reps' }, [flagged, unit])!.kind).toBe('established');
+  });
+
   it('returns null when nothing matches', () => {
     const other = toTask({ id: 'other', action: 'Push-ups', unit: 'reps' });
     const tasks = [other];

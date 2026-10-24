@@ -472,11 +472,10 @@ final class TaskDetailViewModelTests: XCTestCase {
         try db.saveTask(unit)
         try db.saveTask(task("n1", type: .normal))
 
-        XCTAssertEqual((await loaded(db, taskId: "plain", expectHero: false)).model?.canPromoteToCounter, true)
-        XCTAssertEqual((await loaded(db, taskId: "root", expectHero: false)).model?.canPromoteToCounter, false)
-        XCTAssertEqual((await loaded(db, taskId: "copy", expectHero: false)).model?.canPromoteToCounter, false)
-        XCTAssertEqual((await loaded(db, taskId: "unit", expectHero: false)).model?.canPromoteToCounter, false)
-        XCTAssertEqual((await loaded(db, taskId: "n1", expectHero: false)).model?.canPromoteToCounter, false)
+        for (id, expected) in [("plain", true), ("root", false), ("copy", false), ("unit", false), ("n1", false)] {
+            let vm = await loaded(db, taskId: id, expectHero: false)
+            XCTAssertEqual(vm.model?.canPromoteToCounter, expected, id)
+        }
     }
 
     func test_useAsCounter_flagsTheTask_keepsItsCountAndGoal_andTheHeroGainsItsCounterRow() async throws {

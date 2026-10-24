@@ -137,7 +137,8 @@ struct NewCounterSheetView: View {
                     busy: busy,
                     match: match,
                     isEditing: isEditing,
-                    kindLock: root.map { kindPickerLock(mode: .edit, kind: resolveCountKind($0.countKind)) } ?? .none,
+                    kindLock: adoptTarget != nil ? .all : (root.map { kindPickerLock(mode: .edit, kind: resolveCountKind($0.countKind)) } ?? .none),
+                    adopting: adoptTarget != nil,
                     onKindRequest: root == nil ? nil : requestKind,
                     onViewCounter: onNavigateToCounter,
                     onUseAsCounter: canAdopt ? { handleAdopt() } : nil
@@ -180,6 +181,14 @@ struct NewCounterSheetView: View {
         .onChange(of: form.kind) {
             form.startText = ""
             if root == nil { form.goalTexts = [:] }
+        }
+        // A standalone match is used at ITS kind: the (locked) picker follows it,
+        // so the Defaults cells parse in that kind's grammar.
+        .onChange(of: adoptTarget?.id) {
+            if let target = adoptTarget {
+                let kind = resolveCountKind(target.countKind)
+                if form.kind != kind { form.kind = kind }
+            }
         }
         .kindSwitchConfirm(pending: $pendingSwitch) { p in form.kind = p.to }
     }
@@ -233,20 +242,33 @@ struct NewCounterSheetView: View {
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
+            let promoted: Task
             do {
-                let promoted = try db.promoteTaskToCounter(taskId: target.id, now: AppDatabase.currentTimestamp())
-                if let patch = CounterEditModel.adoptPatch(task: promoted, draft: draft) {
-                    try db.applyTaskEditPatch(taskId: promoted.id, patch: patch)
-                }
-                await MainActor.run {
-                    busy = false
-                    onNavigateToCounter(promoted.id)
-                }
+                promoted = try db.promoteTaskToCounter(taskId: target.id, now: AppDatabase.currentTimestamp())
             } catch {
                 await MainActor.run {
                     busy = false
                     self.error = "Could not use this task as a counter."
                 }
+                return
+            }
+            // The task is the counter now; a failed settings write leaves the
+            // sheet open on that state (the card turns into "Open …" once the
+            // pool refreshes).
+            do {
+                if let patch = CounterEditModel.adoptPatch(task: promoted, draft: draft) {
+                    try db.applyTaskEditPatch(taskId: promoted.id, patch: patch)
+                }
+            } catch {
+                await MainActor.run {
+                    busy = false
+                    self.error = "Settings not saved."
+                }
+                return
+            }
+            await MainActor.run {
+                busy = false
+                onNavigateToCounter(promoted.id)
             }
         }
     }
@@ -258,12 +280,13 @@ struct NewCounterSheetView: View {
         let parsedStarting = startFromValue
         let capturedKind = form.kind
         let capturedSettings = form.storedSettings
+        let db = database
         error = nil
         busy = true
         _Concurrency.Task.detached(priority: .userInitiated) {
             let now = AppDatabase.currentTimestamp()
             do {
-                let task = try AppDatabase.shared.createCounterTask(
+                let task = try db.createCounterTask(
                     userId: userId,
                     action: capturedVerb,
                     unit: capturedUnit,
@@ -305,6 +328,8 @@ struct NewCounterSheetContentView: View {
     /// Edit mode: hides "Start from" (the seed is a create-only field).
     var isEditing: Bool = false
     var kindLock: KindPickerLock = .none
+    /// Create mode with a standalone match: hides "Start from" (the existing task keeps its count).
+    var adopting: Bool = false
     /// Edit mode routes picks through the confirm seam; nil = set directly.
     var onKindRequest: ((CountKind) -> Void)? = nil
     var onViewCounter: (String) -> Void = { _ in }
@@ -345,7 +370,7 @@ struct NewCounterSheetContentView: View {
 
             DefaultsRowView(kind: form.kind, unit: form.trimmedNoun, texts: $form.goalTexts, derived: defaults.goals)
 
-            if !isEditing {
+            if !isEditing, !adopting {
                 fieldBlock(label: "Start from (optional)") {
                     GoalEntryView(kind: form.kind, text: $form.startText, placeholder: "0", invalid: startFromInvalid)
                 }

@@ -223,7 +223,9 @@ struct CounterCreateMatch {
 /// nothing matches (create proceeds). Wraps `findLinkableCounter`; the task
 /// row is looked up because `memberCount` alone cannot distinguish a
 /// standalone from a flagged single-member counter
-/// (docs/SHARED_COUNTERS.md §P5 decision 7).
+/// (docs/SHARED_COUNTERS.md §P5 decision 7). A standalone the promote write
+/// would refuse (`canPromoteToCounter` — today a unit task) is `nil` too:
+/// offering "Use as counter" on it would dead-end, so create proceeds.
 ///
 /// - Parameters:
 ///   - action: The new task's action (activity) as typed.
@@ -239,16 +241,20 @@ func classifyCounterCreateMatch(
     excludeTaskId: String? = nil,
     tasks: [Task]
 ) -> CounterCreateMatch? {
+    // A unit task can never be a counter root (the write refuses it), so it
+    // never shadows an established counter of the same pair as "the" match.
+    let pool = tasks.filter { $0.countsTowardCounterId == nil }
     guard let match = findLinkableCounter(
         action: action,
         unit: unit,
         excludeTaskId: excludeTaskId,
-        tasks: tasks
+        tasks: pool
     ) else { return nil }
 
-    guard let task = tasks.first(where: { $0.id == match.counterId }) else { return nil }
+    guard let task = pool.first(where: { $0.id == match.counterId }) else { return nil }
 
     let established = match.memberCount > 1 || task.isCounter == true
+    if !established, !canPromoteToCounter(task) { return nil }
     return CounterCreateMatch(
         kind: established ? .established : .standalone,
         task: task,
