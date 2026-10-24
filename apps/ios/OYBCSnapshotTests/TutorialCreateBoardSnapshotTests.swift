@@ -8,8 +8,8 @@ import SnapshotTesting
 /// board" sheet, each at the state a walkthrough step implies
 /// (`TutorialCreateBoardState.implied(step:typed:)`). The scrim, ring and coach
 /// mark belong to the stage and are covered by `TutorialSnapshotTests`; these
-/// render the facsimiles bare. Step numbers below are 0-based, as in the state's
-/// `Step` constants.
+/// render the facsimiles bare. Steps are the state's `Step` constants (0-based);
+/// the section headers count from 1 like the handoff.
 @MainActor
 final class TutorialCreateBoardSnapshotTests: XCTestCase {
 
@@ -24,9 +24,9 @@ final class TutorialCreateBoardSnapshotTests: XCTestCase {
         )
     }
 
-    /// The lesson at a state, with the clock pinned.
+    /// The lesson at a state (the sample week is a fixture, so no clock).
     private func lesson(_ state: TutorialCreateBoardState, step: Int) -> some View {
-        TutorialCreateBoardLesson(state: state, step: step, perform: { _ in }, now: SnapshotFixtures.fixedNow)
+        TutorialCreateBoardLesson(state: state, step: step, perform: { _ in })
     }
 
     /// The state a walkthrough step implies.
@@ -34,73 +34,71 @@ final class TutorialCreateBoardSnapshotTests: XCTestCase {
         .implied(step: step, typed: typed)
     }
 
+    private typealias L2 = TutorialCreateBoardState.Step
+
     // MARK: - Hub (step 1)
 
-    func testHubLight() { snap(lesson(implied(0), step: 0)) }
-    func testHubDark() { snap(lesson(implied(0), step: 0), dark: true) }
+    func testHubLight() { snap(lesson(implied(L2.hub), step: L2.hub)) }
+    func testHubDark() { snap(lesson(implied(L2.hub), step: L2.hub), dark: true) }
 
-    // MARK: - Setup (steps 2-3)
+    // MARK: - Setup (steps 3-6)
 
-    func testSetupTimeframeLight() { snap(lesson(implied(1), step: 1)) }
+    /// Weekly offered, the chip still reads "Pick a timeframe".
+    func testSetupTimeframeLight() { snap(lesson(implied(L2.timeframe), step: L2.timeframe)) }
 
-    func testSetupSizePickedLight() {
-        var state = implied(2)
-        state.sizePicked = true
-        snap(lesson(state, step: 2))
-    }
+    /// Weekly picked: the chip names the sample week.
+    func testSetupWindowLight() { snap(lesson(implied(L2.window), step: L2.window)) }
 
-    func testSetupSizePickedDark() {
-        var state = implied(2)
-        state.sizePicked = true
-        snap(lesson(state, step: 2), dark: true)
-    }
+    /// 3×3 picked, Next live, the "8 tasks" caption in ink.
+    func testSetupSizePickedLight() { snap(lesson(implied(L2.setupNext), step: L2.setupNext)) }
+    func testSetupSizePickedDark() { snap(lesson(implied(L2.setupNext), step: L2.setupNext), dark: true) }
 
-    // MARK: - Tasks (steps 4-8)
+    // MARK: - Tasks (steps 8-13)
 
-    func testTasksEmptyLight() { snap(lesson(implied(3), step: 3)) }
+    func testTasksEmptyLight() { snap(lesson(implied(L2.addFromPool), step: L2.addFromPool)) }
 
     func testSourceSheetPoolCheckedLight() {
-        var state = implied(4)
+        var state = implied(L2.pickPool)
         state.poolChecked = true
-        snap(lesson(state, step: 4))
+        snap(lesson(state, step: L2.pickPool))
     }
 
     func testSourceSheetPoolCheckedDark() {
-        var state = implied(4)
+        var state = implied(L2.pickPool)
         state.poolChecked = true
-        snap(lesson(state, step: 4), dark: true)
+        snap(lesson(state, step: L2.pickPool), dark: true)
     }
 
-    func testTasksPoolAddedLight() { snap(lesson(implied(5), step: 5)) }
+    func testTasksPoolAddedLight() { snap(lesson(implied(L2.sourceRow), step: L2.sourceRow)) }
 
-    func testTasksSourceExpandedLight() { snap(lesson(implied(6), step: 6), height: 1000) }
-    func testTasksSourceExpandedDark() { snap(lesson(implied(6), step: 6), height: 1000, dark: true) }
+    func testTasksSourceExpandedLight() { snap(lesson(implied(L2.exclude), step: L2.exclude), height: 1000) }
+    func testTasksSourceExpandedDark() { snap(lesson(implied(L2.exclude), step: L2.exclude), height: 1000, dark: true) }
 
     func testTasksExcludedTypedLight() {
-        var state = implied(7)
+        var state = implied(L2.handAdd)
         state.quickText = "Drink water"
-        snap(lesson(state, step: 7))
+        snap(lesson(state, step: L2.handAdd))
     }
 
     func testTasksHandAddedLight() {
-        var state = implied(7)
+        var state = implied(L2.handAdd)
         state.handAddedTitle = "Drink water"
-        snap(lesson(state, step: 7))
+        snap(lesson(state, step: L2.handAdd))
     }
 
     func testTasksHandAddedDark() {
-        var state = implied(7)
+        var state = implied(L2.handAdd)
         state.handAddedTitle = "Drink water"
-        snap(lesson(state, step: 7), dark: true)
+        snap(lesson(state, step: L2.handAdd), dark: true)
     }
 
-    // MARK: - Preview (step 9)
+    // MARK: - Preview (step 14)
 
     func testPreviewLight() {
-        snap(lesson(implied(8, typed: [TutorialField.wizardQuickAdd.rawValue: "Drink water"]), step: 8))
+        snap(lesson(implied(L2.activate, typed: [TutorialField.wizardQuickAdd.rawValue: "Drink water"]), step: L2.activate))
     }
 
     func testPreviewDark() {
-        snap(lesson(implied(8, typed: [TutorialField.wizardQuickAdd.rawValue: "Drink water"]), step: 8), dark: true)
+        snap(lesson(implied(L2.activate, typed: [TutorialField.wizardQuickAdd.rawValue: "Drink water"]), step: L2.activate), dark: true)
     }
 }

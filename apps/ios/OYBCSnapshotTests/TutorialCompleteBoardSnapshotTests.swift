@@ -30,12 +30,12 @@ final class TutorialCompleteBoardSnapshotTests: XCTestCase {
         return TutorialCompleteBoardLesson(state: state, step: step, perform: { _ in })
     }
 
-    // MARK: - Play board (step 1)
+    // MARK: - Play board (steps 1-2)
 
     func testBoardStartLight() { snap(lesson(step: TutorialCompleteBoardState.Step.edit)) }
     func testBoardStartDark() { snap(lesson(step: TutorialCompleteBoardState.Step.edit), dark: true) }
 
-    // MARK: - Edit panel (steps 2 and 4)
+    // MARK: - Edit panel (steps 3 and 5)
 
     func testEditPanelLight() { snap(lesson(step: TutorialCompleteBoardState.Step.tapJournal)) }
     func testEditPanelDark() { snap(lesson(step: TutorialCompleteBoardState.Step.tapJournal), dark: true) }
@@ -43,17 +43,17 @@ final class TutorialCompleteBoardSnapshotTests: XCTestCase {
     func testEditPanelOneChangeLight() { snap(lesson(step: TutorialCompleteBoardState.Step.save)) }
     func testEditPanelOneChangeDark() { snap(lesson(step: TutorialCompleteBoardState.Step.save), dark: true) }
 
-    // MARK: - Replace sheet (step 3)
+    // MARK: - Replace sheet (step 4)
 
     func testReplaceSheetLight() { snap(lesson(step: TutorialCompleteBoardState.Step.pickReplacement)) }
     func testReplaceSheetDark() { snap(lesson(step: TutorialCompleteBoardState.Step.pickReplacement), dark: true) }
 
-    // MARK: - Stretch toast (step 6)
+    // MARK: - Stretch toast (step 8)
 
     func testStretchToastLight() { snap(lesson(step: TutorialCompleteBoardState.Step.toast)) }
     func testStretchToastDark() { snap(lesson(step: TutorialCompleteBoardState.Step.toast), dark: true) }
 
-    // MARK: - Square sheet (steps 8 and 9)
+    // MARK: - Square sheet (steps 10 and 11)
 
     func testSquareSheetChipsLight() { snap(lesson(step: TutorialCompleteBoardState.Step.chips)) }
     func testSquareSheetChipsDark() { snap(lesson(step: TutorialCompleteBoardState.Step.chips), dark: true) }
@@ -69,15 +69,22 @@ final class TutorialCompleteBoardSnapshotTests: XCTestCase {
         })
     }
 
-    // MARK: - Hold menu (step 11)
+    // MARK: - Hold menu (step 13)
 
     func testHoldMenuLight() { snap(lesson(step: TutorialCompleteBoardState.Step.markDone)) }
     func testHoldMenuDark() { snap(lesson(step: TutorialCompleteBoardState.Step.markDone), dark: true) }
 
-    // MARK: - Finale (step 12)
+    // MARK: - Finale (step 16)
 
     func testFinaleLight() { snap(lesson(step: TutorialCompleteBoardState.Step.finale)) }
     func testFinaleDark() { snap(lesson(step: TutorialCompleteBoardState.Step.finale), dark: true) }
+
+    /// 16b: Meditate done; the middle column rings beside the middle row.
+    func testFinaleSecondLineLight() {
+        snap(lesson(step: TutorialCompleteBoardState.Step.finale) { state in
+            _ = state.apply(.squareTapped(TutorialSampleWeek.Slot.journal), step: TutorialCompleteBoardState.Step.finale)
+        })
+    }
 
     // MARK: - Moments
 

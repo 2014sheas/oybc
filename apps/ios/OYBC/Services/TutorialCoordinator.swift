@@ -34,11 +34,28 @@ struct TutorialSession: Equatable {
     /// The controls lit right now.
     var spots: [TutorialSpot] { phase == .running ? state.spots(step: step) : [] }
 
-    /// The coach mark's line.
-    var text: String { state.textOverride(step: step) ?? currentStep?.text ?? "" }
+    /// The step the coach mark shows: the state's override once it moved within
+    /// the step, else the catalog's.
+    var shownStep: TutorialStep? { state.stepOverride(step: step) ?? currentStep }
 
-    /// Whether the coach mark shows Next (read-only step).
-    var showsNext: Bool { currentStep?.advance == .next }
+    /// The coach mark's instruction line (a tell's body). The first mark after
+    /// a resume uses the step's short form when it has one.
+    var text: String {
+        guard let shown = shownStep else { return "" }
+        return resumed ? (shown.resumedText ?? shown.text) : shown.text
+    }
+
+    /// The coach mark's note line (dropped with the resumed short form).
+    var note: String? {
+        guard let shown = shownStep else { return nil }
+        return resumed && shown.resumedText != nil ? nil : shown.note
+    }
+
+    /// A tell's title; nil on a compact step.
+    var title: String? { shownStep?.title }
+
+    /// Whether the coach mark shows Next (read-only step or tell).
+    var showsNext: Bool { shownStep?.advance == .next }
 }
 
 // MARK: - Coordinator

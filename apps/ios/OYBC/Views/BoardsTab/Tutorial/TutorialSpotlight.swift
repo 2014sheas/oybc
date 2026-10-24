@@ -62,6 +62,21 @@ enum TutorialCoachGeometry {
     static let ringWidth: CGFloat = 3
     /// Horizontal inset of the coach mark.
     static let markInset: CGFloat = 20
+    /// Horizontal inset of a tell.
+    static let tellInset: CGFloat = 28
+
+    /// Room left under the mark while a shipped moment plays, so it sits above
+    /// the moment's buttons (`RisoMomentOverlay.buttons`: large buttons 51pt,
+    /// 10pt apart, the Greenlog's quiet text link, 20pt bottom padding) with
+    /// the usual gap.
+    static func momentButtonsReserve(session: TutorialSession) -> CGFloat {
+        let greenlog: Bool = {
+            if case .completeBoard(let s) = session.state { return s.moment == .greenlog }
+            return false
+        }()
+        let buttons: CGFloat = greenlog ? (51 + 10 + 51 + 10 + 30) : (51 + 10 + 51)
+        return 20 + buttons + markGap
+    }
     /// Estimated mark height used only to choose above vs below.
     static let markEstimate: CGFloat = 72
 
@@ -148,10 +163,10 @@ struct TutorialSpotlightOverlay: View {
 
     var body: some View {
         GeometryReader { geo in
-            if let session = coach.session, session.phase != .complete, !coach.isClosing, !session.state.coachHidden {
+            if let session = coach.session, session.phase != .complete, !coach.isClosing {
                 let spots = session.spots
                 let lit = spots.compactMap { spot in
-                    wired[spot.id].map { (rect: geo[$0.anchor], radius: $0.radius, ringed: spot.ringed) }
+                    wired[spot.id].map { (rect: geo[$0.anchor], radius: $0.radius, ringed: spot.ringed, primary: spot.primary) }
                 }
                 layer(geo: geo, session: session, lit: lit)
                     .transaction { if reduceMotion { $0.animation = nil } }
@@ -165,52 +180,76 @@ struct TutorialSpotlightOverlay: View {
     }
 
     @ViewBuilder
-    private func layer(geo: GeometryProxy, session: TutorialSession, lit: [(rect: CGRect, radius: CGFloat, ringed: Bool)]) -> some View {
+    private func layer(geo: GeometryProxy, session: TutorialSession, lit: [(rect: CGRect, radius: CGFloat, ringed: Bool, primary: Bool)]) -> some View {
         let outset = TutorialCoachGeometry.ringOutset
-        let holes = lit.map { item -> (rect: CGRect, radius: CGFloat, ringed: Bool) in
+        let holes = lit.map { item -> (rect: CGRect, radius: CGFloat, ringed: Bool, primary: Bool) in
             let rect = item.rect.insetBy(dx: -outset, dy: -outset)
-            return (rect, min(item.radius + outset, min(rect.width, rect.height) / 2), item.ringed)
+            return (rect, min(item.radius + outset, min(rect.width, rect.height) / 2), item.ringed, item.primary)
         }
         let ringed = holes.filter(\.ringed).map(\.rect)
+        let primaries = holes.filter { $0.ringed && $0.primary }.map(\.rect)
+        let readOnly = holes.filter { $0.ringed && !$0.primary }.map(\.rect)
+        // A lit read-only group (lesson 2's "8 tasks" caption and centre row
+        // beside the wired Next): the mark clears the whole group and its notch
+        // points at the first lit caption. One ringed control: the notch points
+        // at it. Several primaries (the finale's squares): no notch.
+        let notchRects = readOnly.isEmpty ? (primaries.count == 1 ? primaries : []) : [readOnly[0]]
         let hasTarget = !ringed.isEmpty
         let target = TutorialCoachGeometry.placementTarget(
-            lit: ringed, containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0
+            lit: readOnly.isEmpty && primaries.count == 1 ? primaries : ringed,
+            containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0
         )
         let below = hasTarget
             ? TutorialCoachGeometry.placesBelow(target: target, containerHeight: geo.size.height, bottomReserve: keyboardHeight, topReserve: 0)
             : false
-        // Several ringed controls (the finale's three squares): no notch.
-        let notch: TutorialCoachMark.Notch = hasTarget ? (ringed.count > 1 ? .none : (below ? .up : .down)) : .none
-        let notchOffset = hasTarget ? TutorialCoachGeometry.notchOffset(targetMidX: ringed[0].midX, containerWidth: geo.size.width) : 0
+        let notch: TutorialCoachMark.Notch = notchRects.count == 1 ? (below ? .up : .down) : .none
+        let notchOffset = notchRects.count == 1 ? TutorialCoachGeometry.notchOffset(targetMidX: notchRects[0].midX, containerWidth: geo.size.width) : 0
+        let isTell = session.title != nil
+        // A shipped moment plays whole: no scrim, no rings; the mark sits above
+        // its buttons.
+        let scrimHidden = session.state.scrimHidden
+        let bottomPad: CGFloat = scrimHidden
+            ? TutorialCoachGeometry.momentButtonsReserve(session: session)
+            : (hasTarget && !below ? geo.size.height - target.minY + TutorialCoachGeometry.markGap : (hasTarget ? 0 : 24 + keyboardHeight))
 
         ZStack(alignment: .top) {
-            // Scrim: swallows taps outside the holes and pulses the ring. Drawn
-            // through a mask (not even-odd) so two holes that touch — the goal
-            // and unit fields — leave no hairline between them.
-            Rectangle()
-                .fill(TutorialScrimShape.color)
-                .mask {
-                    ZStack {
-                        Rectangle()
-                        TutorialHolesShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) })
-                            .fill(Color.black)
-                            .blendMode(.destinationOut)
+            if !scrimHidden {
+                // Scrim: swallows taps outside the holes and pulses the ring. Drawn
+                // through a mask (not even-odd) so two holes that touch — the goal
+                // and unit fields — leave no hairline between them.
+                Rectangle()
+                    .fill(TutorialScrimShape.color)
+                    .mask {
+                        ZStack {
+                            Rectangle()
+                            TutorialHolesShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) })
+                                .fill(Color.black)
+                                .blendMode(.destinationOut)
+                        }
+                        .compositingGroup()
                     }
-                    .compositingGroup()
-                }
-                .contentShape(TutorialScrimShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) }), eoFill: true)
-                .onTapGesture { pulse += 1 }
-                .accessibilityHidden(true)
+                    .contentShape(TutorialScrimShape(holes: holes.map { (rect: $0.rect, radius: $0.radius) }), eoFill: true)
+                    .onTapGesture { pulse += 1 }
+                    .accessibilityHidden(true)
 
-            ForEach(Array(holes.enumerated()), id: \.offset) { _, hole in
-                if hole.ringed { spotlightRing(hole: (hole.rect, hole.radius)) }
+                ForEach(Array(holes.enumerated()), id: \.offset) { _, hole in
+                    if hole.ringed { spotlightRing(hole: (hole.rect, hole.radius)) }
+                }
             }
 
-            mark(session: session, notch: notch, notchOffset: notchOffset)
-                .padding(.horizontal, TutorialCoachGeometry.markInset)
-                .padding(.top, hasTarget && below ? target.maxY + TutorialCoachGeometry.markGap : 0)
-                .padding(.bottom, hasTarget && !below ? geo.size.height - target.minY + TutorialCoachGeometry.markGap : (hasTarget ? 0 : 24 + keyboardHeight))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: hasTarget && below ? .top : .bottom)
+            if isTell {
+                // A tell: inset 28, centred in the room above the keyboard.
+                mark(session: session, notch: .none, notchOffset: 0)
+                    .padding(.horizontal, TutorialCoachGeometry.tellInset)
+                    .padding(.bottom, keyboardHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                mark(session: session, notch: notch, notchOffset: notchOffset)
+                    .padding(.horizontal, TutorialCoachGeometry.markInset)
+                    .padding(.top, hasTarget && below ? target.maxY + TutorialCoachGeometry.markGap : 0)
+                    .padding(.bottom, bottomPad)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: hasTarget && below ? .top : .bottom)
+            }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: session.step)
     }
@@ -238,6 +277,8 @@ struct TutorialSpotlightOverlay: View {
     private func mark(session: TutorialSession, notch: TutorialCoachMark.Notch, notchOffset: CGFloat) -> some View {
         TutorialCoachMark(
             text: session.text,
+            note: session.note,
+            title: session.title,
             resumed: session.resumed,
             showsNext: session.showsNext,
             notch: notch,

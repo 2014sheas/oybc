@@ -15,9 +15,6 @@ struct TutorialCreateBoardLesson: View {
     let state: TutorialCreateBoardState
     let step: Int
     let perform: (TutorialEvent) -> Void
-    /// The clock the Setup step's window note reads (injectable so snapshots
-    /// never render the live date).
-    var now: Date = Date()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -25,7 +22,7 @@ struct TutorialCreateBoardLesson: View {
             case .hub:
                 TutorialCreateHubFacsimile(perform: perform)
             case .setup:
-                TutorialCreateBoardSetupFacsimile(state: state, perform: perform, now: now)
+                TutorialCreateBoardSetupFacsimile(state: state, step: step, perform: perform)
             case .tasks:
                 TutorialCreateBoardTasksFacsimile(state: state, step: step, perform: perform)
             case .preview:
@@ -188,13 +185,20 @@ struct TutorialWizardFrame<Content: View, Footer: View>: View {
 // MARK: - Setup step
 
 /// Wizard step 1: the name (fixed, inert), the timeframe row with Weekly the one
-/// live segment, the window note, the size cards with 3×3 the one live card, the
-/// task-count caption and the Free / Choose / None row (inert). Footer: Cancel
-/// (inert) and Next, dimmed until a size is picked.
+/// live segment, the window chip ("Pick a timeframe" until Weekly, then the
+/// sample week — lit to read at step 4), the size cards with 3×3 the one live
+/// card, the task-count caption and the Free / Choose / None row (both lit to
+/// read beside Next at step 6, inert). Footer: Cancel (inert) and Next, dimmed
+/// until a size is picked.
 struct TutorialCreateBoardSetupFacsimile: View {
     let state: TutorialCreateBoardState
+    let step: Int
     let perform: (TutorialEvent) -> Void
-    let now: Date
+
+    private typealias Step = TutorialCreateBoardState.Step
+
+    /// The "8 tasks" caption and the centre row read as the step's subject.
+    private var countLit: Bool { step == Step.setupNext }
 
     var body: some View {
         TutorialWizardFrame(kicker: "New one-off board", title: "Setup", activeStep: 1) {
@@ -253,19 +257,22 @@ struct TutorialCreateBoardSetupFacsimile: View {
                 TutorialLockedSegment(label: "Yearly")
                 TutorialLockedSegment(label: "Custom")
             }
-            windowNote.tutorialInert()
+            windowNote
+                .tutorialWired(.windowChip)
+                .tutorialInert()
         }
     }
 
-    /// The dashed window chip: calendar glyph + this week's range, as the shipped
-    /// form's note ("Week of Oct 19 – 25, 2026"). Weeks start on Monday here, so
-    /// the chip never depends on the person's own setting.
+    /// The dashed window chip as the shipped form draws it: "Pick a timeframe"
+    /// at 40% keyline until Weekly is picked, then the calendar glyph and the
+    /// sample board's week (`TutorialCreateBoardFixture.windowLabel`, pinned so
+    /// it matches the coach line).
     private var windowNote: some View {
         HStack(spacing: 8) {
             Image(systemName: "calendar")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.risoMuted)
-            Text(windowLabel)
+            Text(state.timeframePicked ? TutorialCreateBoardFixture.windowLabel : "Pick a timeframe")
                 .font(.risoBody(12, .semibold))
                 .foregroundStyle(Color.risoMuted)
                 .lineLimit(2)
@@ -273,16 +280,12 @@ struct TutorialCreateBoardSetupFacsimile: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper))
         .overlay(
             RoundedRectangle(cornerRadius: Riso.cardRadius)
                 .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
-                .foregroundStyle(Color.risoInk)
+                .foregroundStyle(Color.risoInk.opacity(state.timeframePicked ? 1 : 0.4))
         )
-    }
-
-    private var windowLabel: String {
-        let start = computeTimeframeBoundaries(timeframe: .weekly, referenceDate: now, weekStartDay: "monday")?.start ?? now
-        return formatWindowLabel(timeframe: .weekly, startDate: start)
     }
 
     private var sizeSection: some View {
@@ -294,9 +297,12 @@ struct TutorialCreateBoardSetupFacsimile: View {
                 TutorialLockedSizeCard(n: 4)
                 TutorialLockedSizeCard(n: 5)
             }
+            // Lit to read at step 6: ink and bold, like the canvas.
             Text("\(TutorialCreateBoardFixture.required) tasks")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
+                .font(.risoBody(12, countLit ? .bold : .regular))
+                .foregroundStyle(countLit ? Color.risoInk : Color.risoMuted)
+                .padding(.horizontal, 2)
+                .tutorialWired(.taskCountLabel, radius: 6)
                 .tutorialInert()
         }
     }
@@ -309,6 +315,7 @@ struct TutorialCreateBoardSetupFacsimile: View {
                 TutorialSegment(label: "Choose")
                 TutorialSegment(label: "None")
             }
+            .tutorialWired(.centerRow)
         }
         .tutorialInert()
     }

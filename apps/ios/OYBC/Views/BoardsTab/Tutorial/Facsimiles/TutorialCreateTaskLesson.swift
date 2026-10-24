@@ -5,7 +5,8 @@ import SwiftUI
 /// The lesson 1 facsimiles: the Tasks tab (`TutorialTasksFacsimile`) and the
 /// New task sheet (`TutorialNewTaskSheetFacsimile`), fed by
 /// `TutorialCreateTaskState`. The library list is a fixture that mirrors only
-/// the writes made in this lesson, never the user's own library.
+/// the writes made in this lesson, never the user's own library. The three
+/// tells sit over these screens with nothing lifted (the stage draws them).
 struct TutorialCreateTaskLesson: View {
     let state: TutorialCreateTaskState
     let step: Int
@@ -215,7 +216,7 @@ struct TutorialNewTaskSheetFacsimile: View {
 
     private func scrollTarget(_ step: Int) -> String {
         switch step {
-        case Step.quickAdd, Step.special: return "quick"
+        case Step.tellKinds, Step.quickAdd, Step.special: return "quick"
         case Step.submit: return "submit"
         default: return "fields"
         }

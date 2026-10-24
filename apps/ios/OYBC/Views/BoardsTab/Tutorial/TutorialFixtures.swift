@@ -40,6 +40,21 @@ enum TutorialCreateBoardFixture {
     /// Squares the board needs around its free centre.
     static let required = 8
 
+    /// The sample board's week (handoff: "Week of Oct 20 – 26, 2026"), pinned
+    /// like the Sample week fixture so the Setup chip and the coach line agree
+    /// on every device and in every snapshot. Local noon, Monday 2026-10-20.
+    static let windowStart: Date = {
+        var components = DateComponents()
+        components.year = 2026; components.month = 10; components.day = 20; components.hour = 12
+        return Calendar.current.date(from: components) ?? Date(timeIntervalSince1970: 1_792_497_600)
+    }()
+
+    /// The Setup chip once Weekly is picked ("Week of Oct 20 – 26, 2026").
+    static var windowLabel: String { formatWindowLabel(timeframe: .weekly, startDate: windowStart) }
+
+    /// Lesson 2 step 4's coach line, naming the same week.
+    static let windowLine = "This board runs the week of Oct 20 – 26."
+
     /// The Preview grid (row-major, nil = the FREE centre): Fitness in order
     /// with the hand-added task in the excluded task's place.
     static func previewCells(handAdded: String) -> [TutorialFixtureTask?] {
@@ -110,5 +125,19 @@ enum TutorialSampleWeek {
     /// The lines complete in `done`.
     static func completeLines(_ done: Set<Int>) -> [[Int]] {
         lines.filter { $0.allSatisfy(done.contains) }
+    }
+
+    /// A line's name for the finale's note ("the middle column", "a diagonal").
+    static func lineName(_ line: [Int]) -> String {
+        switch lines.firstIndex(of: line) {
+        case 0: return "the top row"
+        case 1: return "the middle row"
+        case 2: return "the bottom row"
+        case 3: return "the left column"
+        case 4: return "the middle column"
+        case 5: return "the right column"
+        case 6, 7: return "a diagonal"
+        default: return "a line"
+        }
     }
 }
