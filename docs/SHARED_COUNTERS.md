@@ -300,15 +300,18 @@ events and placements) from two places:
    {noun} · {total} all-time · {task title}" with **"Use as counter"**: the
    task is promoted, then the sheet's typed name / templates / defaults are
    carried onto it through the Task Detail write (`counterAdoptSubmit` ↔
-   `CounterEditModel.adoptPatch`: the pair as typed — at most its case
-   changes — and the stored settings, at the task's **own kind**, never a kind
-   switch or the seed; nothing typed = no second write), and the caller
-   navigates to its detail like a create. While the match stands, the kind
-   picker is locked to the task's kind (so the Defaults cells parse in that
-   kind's grammar) and "Start from" hides. A standalone the write would
-   refuse — a unit task — classifies as no match, so Create proceeds instead
-   of a dead-end card. A failed settings write after the promote reads
-   "Settings not saved." and leaves the sheet open on the counter it made.
+   `CounterEditModel.adoptPatch`: the stored settings only, at the task's
+   **own verb, noun and kind** — the typed pair matched case-insensitively and
+   never rewrites the task's casing; never a kind switch or the seed; nothing
+   typed = no second write), and the caller navigates to its detail like a
+   create. While the match stands, the kind picker follows the task's kind and
+   locks (so the Defaults cells parse in that kind's grammar) and "Start from"
+   hides; moving the pair off the match restores the kind the user had chosen.
+   Unit tasks are left out of the dedupe pool (the write refuses them and one
+   must never shadow an established counter of the same pair), so a lone unit
+   task is no match and Create proceeds. A failed settings write after the
+   promote reads "Settings not saved." and leaves the sheet open on the
+   counter it made.
    Edit mode is unchanged (a rename onto a standalone pair still saves).
 
 ### Amount logging

@@ -135,9 +135,10 @@ export type CounterCreateMatch = {
  * nothing matches (create proceeds). Wraps `findLinkableCounter`; the task
  * row is looked up because `memberCount` alone cannot distinguish a
  * standalone from a flagged single-member counter
- * (docs/SHARED_COUNTERS.md §P5 decision 7). A standalone the promote write
- * would refuse (`canPromoteToCounter` — today a unit task) is `null` too:
- * offering "Use as counter" on it would dead-end, so create proceeds.
+ * (docs/SHARED_COUNTERS.md §P5 decision 7). Unit tasks are left out of the
+ * pool: the promote write refuses them, so offering "Use as counter" on one
+ * would dead-end, and one must never shadow an established counter of the
+ * same pair — a lone unit task is no match and create proceeds.
  */
 export function classifyCounterCreateMatch(
   input: FindLinkableCounterInput,
@@ -151,7 +152,6 @@ export function classifyCounterCreateMatch(
   const task = pool.find((t) => t.id === match.counterId);
   if (!task) return null;
   const established = match.memberCount > 1 || task.isCounter === true;
-  if (!established && !canPromoteToCounter(task)) return null;
   return {
     kind: established ? 'established' : 'standalone',
     task,

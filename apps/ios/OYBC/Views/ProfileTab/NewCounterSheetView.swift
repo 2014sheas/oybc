@@ -61,6 +61,10 @@ struct NewCounterSheetView: View {
     @State private var error: String? = nil
     @State private var busy: Bool = false
     @State private var pendingSwitch: KindSwitchPreview?
+    /// The standalone match an adopt is writing — held so the pool refresh mid-write cannot flip the card.
+    @State private var adoptHold: Task?
+    /// The kind the sheet had before a standalone match forced the task's — restored when the match goes away.
+    @State private var preAdoptKind: CountKind?
 
     init(
         userId: String,
@@ -115,6 +119,7 @@ struct NewCounterSheetView: View {
     /// Create mode: the standalone counting task an exact pair match names —
     /// it is USED as the counter, never duplicated as a second root.
     private var adoptTarget: Task? {
+        if let adoptHold { return adoptHold }
         guard root == nil, let match, match.kind == .standalone else { return nil }
         return match.task
     }
@@ -187,7 +192,14 @@ struct NewCounterSheetView: View {
         .onChange(of: adoptTarget?.id) {
             if let target = adoptTarget {
                 let kind = resolveCountKind(target.countKind)
-                if form.kind != kind { form.kind = kind }
+                if form.kind != kind {
+                    if preAdoptKind == nil { preAdoptKind = form.kind }
+                    form.kind = kind
+                }
+            } else if let back = preAdoptKind {
+                // The pair moved off the match: back to the kind the user had chosen.
+                preAdoptKind = nil
+                if form.kind != back { form.kind = back }
             }
         }
         .kindSwitchConfirm(pending: $pendingSwitch) { p in form.kind = p.to }
@@ -233,14 +245,16 @@ struct NewCounterSheetView: View {
 
     // MARK: - Actions
 
-    /// Promotes the standalone match and carries the typed settings onto it
-    /// (`CounterEditModel.adoptPatch`; nothing typed = no second write).
+    /// Promotes the standalone match (its verb, noun, count, goal and placements
+    /// stay) and carries the typed settings onto it (`CounterEditModel.adoptPatch`;
+    /// nothing typed = no second write).
     private func handleAdopt() {
         guard canAdopt, let target = adoptTarget else { return }
-        let draft = form.editDraft
+        let settings = form.settingsDraft
         let db = database
         error = nil
         busy = true
+        adoptHold = target
         _Concurrency.Task.detached(priority: .userInitiated) {
             let promoted: Task
             do {
@@ -248,6 +262,7 @@ struct NewCounterSheetView: View {
             } catch {
                 await MainActor.run {
                     busy = false
+                    adoptHold = nil
                     self.error = "Could not use this task as a counter."
                 }
                 return
@@ -256,12 +271,13 @@ struct NewCounterSheetView: View {
             // sheet open on that state (the card turns into "Open …" once the
             // pool refreshes).
             do {
-                if let patch = CounterEditModel.adoptPatch(task: promoted, draft: draft) {
+                if let patch = CounterEditModel.adoptPatch(task: promoted, settings: settings) {
                     try db.applyTaskEditPatch(taskId: promoted.id, patch: patch)
                 }
             } catch {
                 await MainActor.run {
                     busy = false
+                    adoptHold = nil
                     self.error = "Settings not saved."
                 }
                 return

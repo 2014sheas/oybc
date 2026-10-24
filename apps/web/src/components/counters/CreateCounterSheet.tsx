@@ -2,18 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   classifyCounterCreateMatch,
+  countKindNeedsUnit,
   counterDisplayName,
   counterSettingsDefaults,
-  countKindNeedsUnit,
   formatCountForInput,
   formatCountTotal,
   kindPickerLock,
   parseCountInput,
   resolveCountKind,
   storedCounterSettingsFromDraft,
+  type CountKind,
+  type CounterCreateMatch,
   type CounterGoalTimeframe,
   type CounterSettingsDraft,
-  type CountKind,
   type Task,
 } from '@oybc/shared';
 import { CompoundEditValidationError, saveTaskEdit } from '../../db/operations';
@@ -151,6 +152,10 @@ export function CreateCounterSheet({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The standalone match an adopt is writing — held so the live pool refresh mid-write cannot flip the card. */
+  const [adoptHold, setAdoptHold] = useState<CounterCreateMatch | null>(null);
+  /** The kind the sheet had before a standalone match forced the task's — restored when the match goes away. */
+  const preAdoptKind = useRef<CountKind | null>(null);
 
   // aria-modal, Escape → cancel, Tab trap, focus restore (the first field
   // keeps its autoFocus). Guard against in-flight ops.
@@ -177,6 +182,8 @@ export function CreateCounterSheet({
       setSubmitAttempted(false);
       setError(null);
       setBusy(false);
+      setAdoptHold(null);
+      preAdoptKind.current = null;
     }
     // Re-seed per open / per root identity only — a live refresh of the root
     // while the sheet is open must not clobber the user's typing.
@@ -242,10 +249,20 @@ export function CreateCounterSheet({
   // USED as the counter, never duplicated as a second root. Its kind is the
   // task's own: the picker follows it (locked) and "Start from" hides — the
   // Defaults cells then parse in that kind's grammar.
-  const adopt = !root && match?.kind === 'standalone' ? match : null;
+  const adopt = adoptHold ?? (!root && match?.kind === 'standalone' ? match : null);
   const adoptKind = adopt ? resolveCountKind(adopt.task) : null;
   useEffect(() => {
-    if (adoptKind && adoptKind !== countKind) handleKindChange(adoptKind);
+    if (adoptKind) {
+      if (adoptKind !== countKind) {
+        preAdoptKind.current ??= countKind;
+        handleKindChange(adoptKind);
+      }
+    } else if (preAdoptKind.current) {
+      // The pair moved off the match: back to the kind the user had chosen.
+      const back = preAdoptKind.current;
+      preAdoptKind.current = null;
+      if (back !== countKind) handleKindChange(back);
+    }
     // Only when the matched task (and so its kind) changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adoptKind, adopt?.task.id]);
@@ -308,36 +325,40 @@ export function CreateCounterSheet({
 
   /**
    * "Use as counter" on a standalone match: flags the existing task
-   * (`promoteTaskToCounter` — its count, goal and placements stay), then
-   * carries the typed name / templates / defaults onto it through the Task
-   * Detail write (`counterAdoptSubmit`; nothing typed = no second write), and
-   * lands on its Counter Detail like a create does.
+   * (`promoteTaskToCounter` — its count, goal, placements, verb and noun
+   * stay), then carries the typed name / templates / defaults onto it through
+   * the Task Detail write (`counterAdoptSubmit`; nothing typed = no second
+   * write), and lands on its Counter Detail like a create does.
    */
   async function handleAdopt(): Promise<void> {
     setSubmitAttempted(true);
     if (!canAdopt || !adopt) return;
+    const target = adopt;
     genRef.current += 1;
     const gen = genRef.current;
     setError(null);
     setBusy(true);
+    setAdoptHold(target);
     let promoted: Task;
     try {
-      promoted = await promoteTaskToCounter(adopt.task.id);
+      promoted = await promoteTaskToCounter(target.task.id);
     } catch {
       if (genRef.current !== gen) return;
       setError('Could not use this task as a counter.');
       setBusy(false);
+      setAdoptHold(null);
       return;
     }
     // The task is the counter now; a failed settings write leaves the sheet
     // open on that state (the card turns into "Open …" as the pool refreshes).
     try {
-      const submit = counterAdoptSubmit(promoted, { verb, noun, settings: draft });
+      const submit = counterAdoptSubmit(promoted, draft);
       if (submit) await saveTaskEdit(promoted.id, submit);
     } catch {
       if (genRef.current !== gen) return;
       setError('Settings not saved.');
       setBusy(false);
+      setAdoptHold(null);
       return;
     }
     if (genRef.current !== gen) return;

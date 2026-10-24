@@ -300,20 +300,19 @@ final class CounterEditSheetTests: XCTestCase {
         return t
     }
 
-    func test_adoptPatch_nilWhenNothingTypedBeyondTheMatchedPair() {
-        XCTAssertNil(CounterEditModel.adoptPatch(task: standalone(), draft: .init(verb: "Run", noun: "miles", kind: .discrete)))
-        // Whitespace, an exact-case pair and a DIFFERENT sheet kind are still "nothing typed": never a kind switch.
-        var d = CounterEditModel.Draft(verb: " Run ", noun: "miles ", kind: .continuous)
-        d.settings.name = "   "
-        XCTAssertNil(CounterEditModel.adoptPatch(task: standalone(), draft: d))
+    func test_adoptPatch_nilWhenNothingTyped() {
+        XCTAssertNil(CounterEditModel.adoptPatch(task: standalone(), settings: .init()))
+        var d = CounterSettings.Draft()
+        d.name = "   "
+        XCTAssertNil(CounterEditModel.adoptPatch(task: standalone(), settings: d))
     }
 
-    func test_adoptPatch_carriesTypedSettingsAtTheTasksOwnKind() {
-        var d = CounterEditModel.Draft(verb: "Run", noun: "miles", kind: .discrete)
-        d.settings.name = "Mileage"
-        d.settings.plural = "Jog #N miles"
-        d.settings.goals[.weekly] = 20
-        let p = try! XCTUnwrap(CounterEditModel.adoptPatch(task: standalone(title: "Run 2.5 miles", kind: .continuous, maxCount: 2.5), draft: d))
+    func test_adoptPatch_carriesTypedSettingsAtTheTasksOwnKindVerbAndNoun() throws {
+        var d = CounterSettings.Draft()
+        d.name = "Mileage"
+        d.plural = "Jog #N miles"
+        d.goals[.weekly] = 20
+        let p = try XCTUnwrap(CounterEditModel.adoptPatch(task: standalone(title: "Run 2.5 miles", kind: .continuous, maxCount: 2.5), settings: d))
         XCTAssertEqual(p.title, "Jog 2.5 miles")
         XCTAssertEqual(p.action, "Run")
         XCTAssertEqual(p.unit, "miles")
@@ -323,14 +322,13 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertEqual(p.counterSettings?.timeframeGoals, CounterTimeframeGoals(weekly: 20))
     }
 
-    func test_adoptPatch_recasedPairIsAnEdit_customTitleKept() {
-        let recased = try! XCTUnwrap(CounterEditModel.adoptPatch(task: standalone(), draft: .init(verb: "run", noun: "Miles", kind: .discrete)))
-        XCTAssertEqual(recased.title, "run 5 Miles")
-        XCTAssertNil(recased.counterSettings)
-        let custom = try! XCTUnwrap(
-            CounterEditModel.adoptPatch(task: standalone(title: "Morning miles"), draft: .init(verb: "run", noun: "miles", kind: .discrete))
-        )
+    func test_adoptPatch_customTitleKept_pairNeverRecased() throws {
+        var d = CounterSettings.Draft()
+        d.name = "Mileage"
+        let custom = try XCTUnwrap(CounterEditModel.adoptPatch(task: standalone(title: "Morning miles"), settings: d))
         XCTAssertEqual(custom.title, "Morning miles")
+        XCTAssertEqual(custom.action, "Run")
+        XCTAssertEqual(custom.unit, "miles")
     }
 
     func test_adopt_promoteThenPatchLandsThroughTheTaskDetailWrite() throws {
@@ -339,9 +337,9 @@ final class CounterEditSheetTests: XCTestCase {
         try db.saveTask(standalone())
         let promoted = try db.promoteTaskToCounter(taskId: "plain", now: "2026-10-24T10:00:00.000Z")
         XCTAssertEqual(promoted.isCounter, true)
-        var d = CounterEditModel.Draft(verb: "Run", noun: "miles", kind: .discrete)
-        d.settings.name = "Mileage"
-        let patch = try XCTUnwrap(CounterEditModel.adoptPatch(task: promoted, draft: d))
+        var d = CounterSettings.Draft()
+        d.name = "Mileage"
+        let patch = try XCTUnwrap(CounterEditModel.adoptPatch(task: promoted, settings: d))
         try db.applyTaskEditPatch(taskId: "plain", patch: patch)
         let saved = try XCTUnwrap(try db.fetchTask(id: "plain"))
         XCTAssertEqual(saved.isCounter, true)
@@ -349,5 +347,7 @@ final class CounterEditSheetTests: XCTestCase {
         XCTAssertEqual(saved.currentCount, 12)
         XCTAssertEqual(saved.maxCount, 5)
         XCTAssertEqual(saved.title, "Run 5 miles")
+        XCTAssertEqual(saved.action, "Run")
+        XCTAssertEqual(saved.unit, "miles")
     }
 }

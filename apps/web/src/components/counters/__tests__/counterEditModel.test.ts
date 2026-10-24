@@ -183,14 +183,13 @@ describe('counterAdoptSubmit ("Use as counter" on a standalone match)', () => {
     root({ id: 'plain', isCounter: false, maxCount: 5, title: 'Run 5 miles', ...over });
 
   it('is null when the sheet typed nothing beyond the matched pair', () => {
-    expect(counterAdoptSubmit(standalone(), { verb: 'Run', noun: 'miles', settings: UNSET })).toBeNull();
-    // Whitespace and an exact-case pair are still "nothing typed".
-    expect(counterAdoptSubmit(standalone(), { verb: ' Run ', noun: 'miles ', settings: { ...UNSET, name: '   ' } })).toBeNull();
+    expect(counterAdoptSubmit(standalone(), UNSET)).toBeNull();
+    expect(counterAdoptSubmit(standalone(), { ...UNSET, name: '   ' })).toBeNull();
   });
 
-  it('carries the typed settings and re-renders an auto title, at the task\'s OWN kind', () => {
+  it("carries the typed settings and re-renders an auto title, at the task's OWN kind, verb and noun", () => {
     const submit = counterAdoptSubmit(standalone({ countKind: 'continuous', maxCount: 2.5, title: 'Run 2.5 miles' }), {
-      verb: 'Run', noun: 'miles', settings: { ...UNSET, name: 'Mileage', plural: 'Jog #N miles', goals: { weekly: 20 } },
+      ...UNSET, name: 'Mileage', plural: 'Jog #N miles', goals: { weekly: 20 },
     });
     expect(submit).toEqual({
       title: 'Jog 2.5 miles', action: 'Run', unit: 'miles',
@@ -199,21 +198,21 @@ describe('counterAdoptSubmit ("Use as counter" on a standalone match)', () => {
     expect(submit).not.toHaveProperty('countKind');
   });
 
-  it('a re-cased pair is an edit; a custom title is kept', () => {
-    const recased = counterAdoptSubmit(standalone(), { verb: 'run', noun: 'Miles', settings: UNSET });
-    expect(recased).toEqual({ title: 'run 5 Miles', action: 'run', unit: 'Miles' });
-    expect(counterAdoptSubmit(standalone({ title: 'Morning miles' }), { verb: 'run', noun: 'miles', settings: UNSET }))
-      .toEqual({ title: 'Morning miles', action: 'run', unit: 'miles' });
+  it("never rewrites the task's verb / noun casing (the match was case-insensitive); a custom title is kept", () => {
+    // The sheet typed "run" / "Miles" against a task stored as "Run" / "miles": nothing to write.
+    expect(counterAdoptSubmit(standalone(), UNSET)).toBeNull();
+    const custom = counterAdoptSubmit(standalone({ title: 'Morning miles' }), { ...UNSET, name: 'Mileage' });
+    expect(custom).toEqual({ title: 'Morning miles', action: 'Run', unit: 'miles', counterName: 'Mileage' });
   });
 
   it('after promoteTaskToCounter the submit lands through saveTaskEdit: flag, count, goal and placements kept', async () => {
     await db.tasks.add(standalone({ currentCount: 12 }));
     const promoted = await promoteTaskToCounter('plain');
     expect(promoted.isCounter).toBe(true);
-    const submit = counterAdoptSubmit(promoted, { verb: 'Run', noun: 'miles', settings: { ...UNSET, name: 'Mileage' } });
+    const submit = counterAdoptSubmit(promoted, { ...UNSET, name: 'Mileage' });
     await saveTaskEdit('plain', submit!);
     const saved = (await db.tasks.get('plain'))!;
-    expect(saved).toMatchObject({ isCounter: true, counterName: 'Mileage', currentCount: 12, maxCount: 5, title: 'Run 5 miles' });
+    expect(saved).toMatchObject({ isCounter: true, counterName: 'Mileage', currentCount: 12, maxCount: 5, title: 'Run 5 miles', action: 'Run', unit: 'miles' });
     expect(resolveCreditedCounterName(saved)).toBe('Mileage');
   });
 });
